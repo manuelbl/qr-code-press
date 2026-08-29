@@ -146,6 +146,12 @@ info.segments();
 This is slower than `build()`, because it scores every mask in full. To pin a specific mask
 instead, use `forceMask(3)` on the builder. That is an ordinary option and costs nothing.
 
+
+## Documentation
+
+- [Javadoc](https://javadoc.io/doc/net.codecrete.qrcodepress/qr-code-press)
+
+
 ## Examples
 
 | Example | Demonstrates |

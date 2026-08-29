@@ -80,6 +80,8 @@ version left unchanged would otherwise reach the tag with a green build.
 6. **Confirm the deployment** in the Central Portal, at *Deployments*. A published release can never
    be deleted or overwritten.
 7. Edit the draft release notes and publish the release.
+8. Go to https://javadoc.io/versions/net.codecrete.qrcodepress/qr-code-press, press *Sync from Maven*
+   and upload the new version's Javadoc.
 
 ## If it fails
 
