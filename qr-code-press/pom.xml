@@ -13,6 +13,28 @@
     <url>https://github.com/manuelbl/qr-code-press</url>
     <description>Fast, dependency-free QR code generator for Java</description>
 
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>Manuel Bleichenbacher</name>
+            <email>manuel.bleichenbacher@gmail.com</email>
+            <url>https://github.com/manuelbl</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/manuelbl/qr-code-press.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/manuelbl/qr-code-press.git</developerConnection>
+        <url>https://github.com/manuelbl/qr-code-press</url>
+    </scm>
+
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
@@ -88,5 +110,82 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <!--
+        Publishing to Maven Central. Active only for a release, because signing needs a key that a
+        normal build must not require: `./mvnw verify` and the local `install` the examples resolve
+        from stay untouched. Driven by .github/workflows/release.yml, see RELEASING.md.
+    -->
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.4.0</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Inherits the doclint configuration above, so the published javadoc is linted too. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadoc</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <!-- The passphrase arrives in MAVEN_GPG_PASSPHRASE, so gpg must not ask a tty. -->
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!--
+                        Uploads to the Central Portal. `autoPublish` false leaves the deployment
+                        validated but unpublished, so the release is confirmed by hand in the portal.
+                        A published release can never be deleted or overwritten.
+                    -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.11.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

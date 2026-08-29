@@ -18,14 +18,7 @@ What the example demonstrates:
 
 ## Running
 
-The library is resolved from the local Maven repository, so install it first:
-
-```sh
-cd ../../qr-code-press
-./mvnw install
-```
-
-Then run the example:
+To run the example, execute:
 
 ```sh
 ./mvnw compile exec:java

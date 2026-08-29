@@ -24,6 +24,10 @@ in `qr-code-press/`, and nothing has to be registered anywhere in the *build* wh
 since no Maven project ever sees the examples. CI is the exception. It compiles and runs each
 example from a step of its own, and a new example has to be added there.
 
+`release/set-version.sh` is the only thing that edits a version string. It discovers the poms
+rather than listing them, so an added example needs no change there either. See
+[RELEASING.md](RELEASING.md).
+
 `profiling/` is an independent Maven project as well and resolves the library the same way, so a
 library change has to be installed before it can be measured. It also depends on ZXing and qrcodegen,
 which it benchmarks the library against. It is not part of the library build and CI only compiles it.
@@ -180,6 +184,7 @@ share a name: `X.tsv` describes every case, and `X/` dumps the sampled ones in f
 | What is the library, what is the public API, what was decided | [docs/spec.md](docs/spec.md) |
 | What do the domain terms mean | [CONTEXT.md](CONTEXT.md) |
 | How is the verified data produced | `VerifiedDataExport` in the test tree, and `.claude/skills/updating-test-data` |
+| How is the library released to Maven Central | [RELEASING.md](RELEASING.md) |
 | How is performance measured, and what did it measure before | [profiling/README.md](profiling/README.md) |
 | How does the library compare to ZXing and qrcodegen | [profiling/COMPARISON.md](profiling/COMPARISON.md) |
 | How are the tests structured | [qr-code-press/src/test/CLAUDE.md](qr-code-press/src/test/CLAUDE.md) |

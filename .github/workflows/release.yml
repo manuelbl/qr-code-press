@@ -1,0 +1,192 @@
+name: Release
+
+# Publishes the library to Maven Central and moves `main` on to the next snapshot.
+#
+# Both gates are manual and both come after the artifacts exist: the `publish` job waits for an
+# approval on the `maven-central` environment, and the deployment it uploads is validated but not
+# published, so a release is only final once it is confirmed in the Central Portal. See RELEASING.md.
+#
+# Every job checks out the same commit and re-runs `release/set-version.sh`, which is a pure and
+# idempotent text rewrite. That reproduces a byte-identical tree in each job and avoids passing a
+# working tree between them. Central is written to before anything is pushed to git, so a failure
+# after the upload leaves an unpublished deployment to drop, rather than a tag with no artifact.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. 0.9.0'
+        required: true
+      next-version:
+        description: 'Next development version. Defaults to the next minor, e.g. 0.10.0-SNAPSHOT'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency: release
+
+jobs:
+  # Resolves what is being released and refuses anything the later jobs could not undo cleanly.
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      next-version: ${{ steps.resolve.outputs.next-version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve and check versions
+        id: resolve
+        env:
+          VERSION: ${{ inputs.version }}
+          NEXT_VERSION: ${{ inputs.next-version }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::a release must be dispatched from main, not ${{ github.ref }}"
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$VERSION' is not a release version of the form x.y.z"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+
+          # In 0.x the minor is where breaking changes go, and they are still expected, so the
+          # default next snapshot bumps the minor. Override it with the `next-version` input.
+          if [ -z "$NEXT_VERSION" ]; then
+            IFS=. read -r major minor _ <<< "$VERSION"
+            NEXT_VERSION="$major.$((minor + 1)).0-SNAPSHOT"
+          elif [[ ! "$NEXT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-SNAPSHOT$ ]]; then
+            echo "::error::'$NEXT_VERSION' is not a snapshot version of the form x.y.z-SNAPSHOT"
+            exit 1
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "next-version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing $VERSION from $(git rev-parse --short HEAD), then main moves to $NEXT_VERSION"
+
+  # The release commit is a commit CI has never seen, so the library is built and tested again on
+  # both supported JDKs. Only the library: the examples and the profiling harness are covered by
+  # build.yml on the push that follows the release.
+  verify:
+    name: Verify on JDK ${{ matrix.java }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '25']
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Set release version
+        run: ./release/set-version.sh "${{ needs.prepare.outputs.version }}"
+
+      - name: Build and test
+        working-directory: ./qr-code-press
+        run: ./mvnw -B --no-transfer-progress verify
+
+  # Signs and uploads. The environment holds the signing key and the portal token, and gates the
+  # job on a manual approval.
+  publish:
+    name: Publish to Maven Central
+    needs: [prepare, verify]
+    runs-on: ubuntu-latest
+    environment: maven-central
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      # `server-id` matches <publishingServerId> in the release profile; setup-java writes the
+      # settings.xml entry and imports the signing key.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Set release version
+        run: ./release/set-version.sh "${{ needs.prepare.outputs.version }}"
+
+      # Tests are skipped, the verify job just ran them on both JDKs. The javadoc lint is bound to
+      # `verify`, which `deploy` passes through, so the published javadoc is still linted.
+      - name: Deploy
+        working-directory: ./qr-code-press
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: ./mvnw -B --no-transfer-progress -Prelease -DskipTests deploy
+
+  # Records the release in git: the tagged commit carries the released versions, and the commit
+  # after it puts the poms back on a snapshot while leaving the README documenting the release.
+  finalize:
+    name: Tag and draft release
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check main has not moved
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "${{ needs.prepare.outputs.sha }}" ]; then
+            echo "::error::main moved since this release started; drop the deployment in the Central Portal and re-run"
+            exit 1
+          fi
+
+      - name: Commit, tag and push
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          NEXT_VERSION: ${{ needs.prepare.outputs.next-version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          ./release/set-version.sh "$VERSION"
+          git commit -am "Release $VERSION"
+          git tag -a "v$VERSION" -m "Release $VERSION"
+
+          # Not a revert: the poms go back to a snapshot, the README keeps documenting the release
+          # and keeps its example links pinned to the tag.
+          ./release/set-version.sh --poms-only "$NEXT_VERSION"
+          git commit -am "Prepare for $NEXT_VERSION"
+
+          git push origin main
+          git push origin "v$VERSION"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ needs.prepare.outputs.version }}" --draft --generate-notes --title "v${{ needs.prepare.outputs.version }}"

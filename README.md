@@ -154,8 +154,7 @@ instead, use `forceMask(3)` on the builder. That is an ordinary option and costs
 | [examples/sequence-svg/](examples/sequence-svg/) | splitting a long text across a sequence of Structured Append QR codes and composing them into a single SVG file as a horizontal row, scaled to a fixed physical size |
 | [examples/awt-drawing/](examples/awt-drawing/) | rendering a styled QR code using AWT and Graphics2D |
 
-Each example is an independent Maven project resolving the library from the local Maven repository,
-so run `./mvnw install` in `qr-code-press/` first.
+Each example is an independent Maven project.
 
 ## Building
 
