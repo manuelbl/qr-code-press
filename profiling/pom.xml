@@ -6,7 +6,7 @@
 
     <groupId>net.codecrete.qrcodepress.profiling</groupId>
     <artifactId>qr-code-press-profiling</artifactId>
-    <version>0.9.0</version>
+    <version>0.10.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>QR Code Press Profiling Harness</name>
@@ -15,7 +15,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>17</maven.compiler.release>
-        <qr-code-press.version>0.9.0</qr-code-press.version>
+        <qr-code-press.version>0.10.0-SNAPSHOT</qr-code-press.version>
         <!-- The compared libraries, pinned exactly: a comparison is only meaningful for a known version. -->
         <zxing.version>3.5.4</zxing.version>
         <nayuki.version>1.8.0</nayuki.version>

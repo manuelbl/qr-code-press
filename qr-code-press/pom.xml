@@ -6,7 +6,7 @@
 
     <groupId>net.codecrete.qrcodepress</groupId>
     <artifactId>qr-code-press</artifactId>
-    <version>0.9.0</version>
+    <version>0.10.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>QR Code Press</name>
