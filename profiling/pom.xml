@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>net.codecrete.qrcodepress.profiling</groupId>
+    <artifactId>qr-code-press-profiling</artifactId>
+    <version>0.9.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>QR Code Press Profiling Harness</name>
+    <description>Measures and profiles QR code generation.</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+        <qr-code-press.version>0.9.0-SNAPSHOT</qr-code-press.version>
+        <!-- The compared libraries, pinned exactly: a comparison is only meaningful for a known version. -->
+        <zxing.version>3.5.4</zxing.version>
+        <nayuki.version>1.8.0</nayuki.version>
+        <jmh.version>1.37</jmh.version>
+        <exec.mainClass>net.codecrete.qrcodepress.profiling.Main</exec.mainClass>
+        <!-- Mode and its arguments, e.g. -Dprofiling.args="profile 1500". Empty prints the usage. -->
+        <profiling.args/>
+        <!-- Options for the JVM running the harness, e.g. -Dprofiling.jvmArgs="-XX:StartFlightRecording=..." -->
+        <profiling.jvmArgs/>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>net.codecrete.qrcodepress</groupId>
+            <artifactId>qr-code-press</artifactId>
+            <version>${qr-code-press.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>${zxing.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.nayuki</groupId>
+            <artifactId>qrcodegen</artifactId>
+            <version>${nayuki.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjdk.jmh</groupId>
+            <artifactId>jmh-core</artifactId>
+            <version>${jmh.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!--
+            Filtered so that `libraries.properties` carries the pinned versions above. None of the
+            three jars declares `Implementation-Version` in its manifest, so the build is the only
+            place the versions can be read from, and the pom stays their single source of truth.
+        -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.1</version>
+                <configuration>
+                    <!--
+                        The JMH generator only runs at compile time. Wiring it here instead of as a
+                        dependency keeps it off the runtime classpath, which the forked JVM inherits.
+                    -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.openjdk.jmh</groupId>
+                            <artifactId>jmh-generator-annprocess</artifactId>
+                            <version>${jmh.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <configuration>
+                    <!--
+                        `exec:exec` rather than `exec:java`: JMH forks a JVM and passes on
+                        `java.class.path`, which under `exec:java` is Maven's launcher classpath.
+                    -->
+                    <executable>java</executable>
+                    <commandlineArgs>${profiling.jvmArgs} -classpath %classpath ${exec.mainClass} ${profiling.args}</commandlineArgs>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

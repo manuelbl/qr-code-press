@@ -1,0 +1,14 @@
+# Normalise text to LF in the repository and in the working tree, on every platform.
+* text=auto eol=lf
+
+# Verified test data is compared byte for byte. Take it exactly as it is: no end-of-line
+# conversion, no normalisation. A Windows clone with core.autocrlf=true would otherwise
+# rewrite every module row and fail the whole verified data suite for no real reason.
+qr-code-press/src/test/resources/verified/** -text
+
+# The render snapshots are compared byte for byte too, and the SVG one asserts Unix line endings.
+qr-code-press/src/test/resources/render/** -text
+
+# Windows scripts must keep CRLF to remain executable by cmd.exe.
+*.cmd text eol=crlf
+*.bat text eol=crlf

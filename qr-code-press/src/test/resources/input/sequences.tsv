@@ -1,0 +1,58 @@
+# The Structured Append cases, the input half of verified/structuredappend.tsv.
+#
+# Unlike every other fixture the payloads are not the texts in texts/: a sequence needs kilobytes.
+# A case therefore states its text as a generator, a length and a seed, resolved by RandomText.
+#
+# A length of "search" makes the export find the longest text that still fits into the 16 QR codes
+# of a sequence and emit it together with the next length up, which does not — one input row, two
+# rows of the fixture. Such a row expands in place, so keep them last unless you mean to renumber
+# every case after them.
+#
+# generator	length	seed	eci	minVersion	maxVersion	ecc
+
+# The ten basic cases
+alphanumeric	3000	1001	latin1	29	29	MEDIUM
+mixed	3003	2003	utf8	31	31	MEDIUM
+mixed	34500	9117	utf8	40	40	LOW
+mixed	10017	7543	utf8	19	19	HIGH
+mixed	2117	8172	utf8	33	33	MEDIUM
+alphanumeric	2632	3200	latin1	35	35	MEDIUM
+alphanumeric	3000	4711	latin1	29	29	MEDIUM
+alphanumeric	3000	4711	latin1	10	29	MEDIUM
+mixed	3003	2003	utf8	10	31	MEDIUM
+alphanumeric	200	55	latin1	10	29	MEDIUM
+
+# The same text with and without an announced ECI, which every code of the sequence pays for out of
+# its capacity. Both are pinned rather than only the announced one, since the port's automatic
+# Latin-1 path announces nothing.
+alphanumeric	3000	4711	none	20	20	MEDIUM
+alphanumeric	3000	4711	latin1	20	20	MEDIUM
+
+# Every error correction level on one text and version.
+alphanumeric	4000	1234	latin1	25	25	LOW
+alphanumeric	4000	1234	latin1	25	25	MEDIUM
+alphanumeric	4000	1234	latin1	25	25	QUARTILE
+alphanumeric	4000	1234	latin1	25	25	HIGH
+
+# Version ranges: the whole range, a wide upper range, and a narrow one.
+mixed	5000	777	utf8	1	40	MEDIUM
+mixed	5000	777	utf8	15	40	MEDIUM
+mixed	5000	777	utf8	20	25	MEDIUM
+alphanumeric	5000	777	none	1	40	QUARTILE
+
+# Small versions, where the headers are a large share of a code.
+alphanumeric	600	2024	none	5	5	MEDIUM
+alphanumeric	600	2024	utf8	5	5	MEDIUM
+alphanumeric	200	2024	none	1	40	MEDIUM
+mixed	300	2024	utf8	3	10	LOW
+
+# Long payloads: many codes, and a single code that only just avoids being two.
+alphanumeric	12000	31337	none	20	20	MEDIUM
+mixed	20000	31337	utf8	30	40	LOW
+alphanumeric	310	27	none	10	10	MEDIUM
+
+# The 16-code ceiling, pinned from both sides.
+alphanumeric	search	4711	none	10	10	MEDIUM
+alphanumeric	search	4711	latin1	5	5	QUARTILE
+mixed	search	9117	utf8	19	19	HIGH
+mixed	search	9117	utf8	40	40	LOW

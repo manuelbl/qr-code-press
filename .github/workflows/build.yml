@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The library targets Java 17 and must also run on the current LTS. `--release 17` guarantees
+    # the bytecode, not the behaviour, so the tests run on both rather than only on the newest JDK.
+    name: JDK ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '25']
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      # Runs the tests and lints the javadoc (the javadoc execution is bound to `verify`, which
+      # `install` passes through), then installs the artifact into the local repository. The
+      # examples below resolve the library from there, exactly as a user of the library does.
+      - name: Build, test and install
+        working-directory: ./qr-code-press
+        run: ./mvnw -B --no-transfer-progress install
+
+      # Every example is compiled and run with the command its README documents, using its own
+      # Maven wrapper, so a change that breaks a documented example turns the build red. Exiting
+      # zero is the assertion: the rendered output itself is already pinned by the library's own
+      # render snapshot tests. Examples are listed here one step at a time — see
+      # .claude/skills/adding-an-example/SKILL.md.
+      - name: "Run example: basic-qr-codes"
+        working-directory: ./examples/basic-qr-codes
+        run: ./mvnw -B --no-transfer-progress compile exec:java
+
+      - name: "Run example: sequence-svg"
+        working-directory: ./examples/sequence-svg
+        run: ./mvnw -B --no-transfer-progress compile exec:java
+
+      - name: "Run example: awt-drawing"
+        working-directory: ./examples/awt-drawing
+        run: ./mvnw -B --no-transfer-progress compile exec:java
+
+      # The profiling harness is compile-only here: a number measured on a shared runner says
+      # nothing, but the harness has to keep compiling against the library on both JDKs. `compile`
+      # also runs the JMH annotation processor, so a broken benchmark declaration turns the build
+      # red as well.
+      - name: Compile profiling harness
+        working-directory: ./profiling
+        run: ./mvnw -B --no-transfer-progress compile
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports-jdk${{ matrix.java }}
+          path: qr-code-press/target/surefire-reports/
+          retention-days: 7

@@ -1,0 +1,18 @@
+# The payload texts, and the ECI each is encoded with.
+#
+# textIndex	file	eci
+0	texts/00.txt	auto
+1	texts/01.txt	auto
+2	texts/02.txt	auto
+3	texts/03.txt	auto
+4	texts/04.txt	auto
+5	texts/05.txt	auto
+6	texts/06.txt	auto
+7	texts/07.txt	auto
+8	texts/08.txt	auto
+9	texts/09.txt	auto
+10	texts/10.txt	auto
+11	texts/11.txt	auto
+12	texts/12.txt	20
+13	texts/13.txt	auto
+14	texts/14.txt	20

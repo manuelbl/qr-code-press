@@ -1,0 +1,26 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.java]
+max_line_length = 120
+# Array and annotation initializers are written padded: { 6, 18 }, not {6, 18}.
+# IntelliJ-specific; standard EditorConfig has no property for brace padding.
+ij_java_space_within_array_initializer_braces = true
+ij_java_space_within_empty_array_initializer_braces = false
+ij_continuation_indent_size = 8
+
+[*.{xml,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[{mvnw,mvnw.cmd}]
+indent_style = tab
