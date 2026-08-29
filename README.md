@@ -19,7 +19,7 @@ Easy to use and super fast QR code generator for Java.
 <dependency>
     <groupId>net.codecrete.qrcodepress</groupId>
     <artifactId>qr-code-press</artifactId>
-    <version>0.9.0-SNAPSHOT</version>
+    <version>0.9.0</version>
 </dependency>
 ```
 
@@ -150,9 +150,9 @@ instead, use `forceMask(3)` on the builder. That is an ordinary option and costs
 
 | Example | Demonstrates |
 |---|---|
-| [examples/basic-qr-codes/](examples/basic-qr-codes) | various QR codes as SVG or PNG files, with binary data and emojis, with and without ECI designator, colored modules |
-| [examples/sequence-svg/](examples/sequence-svg/) | splitting a long text across a sequence of Structured Append QR codes and composing them into a single SVG file as a horizontal row, scaled to a fixed physical size |
-| [examples/awt-drawing/](examples/awt-drawing/) | rendering a styled QR code using AWT and Graphics2D |
+| [examples/basic-qr-codes/](https://github.com/manuelbl/qr-code-press/tree/v0.9.0/examples/basic-qr-codes/) | various QR codes as SVG or PNG files, with binary data and emojis, with and without ECI designator, colored modules |
+| [examples/sequence-svg/](https://github.com/manuelbl/qr-code-press/tree/v0.9.0/examples/sequence-svg/) | splitting a long text across a sequence of Structured Append QR codes and composing them into a single SVG file as a horizontal row, scaled to a fixed physical size |
+| [examples/awt-drawing/](https://github.com/manuelbl/qr-code-press/tree/v0.9.0/examples/awt-drawing/) | rendering a styled QR code using AWT and Graphics2D |
 
 Each example is an independent Maven project.
 
