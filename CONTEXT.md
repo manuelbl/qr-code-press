@@ -100,6 +100,15 @@ payload, so a scanner can reassemble the parts and notice they belong together.
 : The light margin around a QR code, measured in modules. The standard asks for at least four. In
 the API it is the `border` parameter of every render method.
 
+**Outline**
+: The dark modules traced as closed polygons: one clockwise loop around each group of modules that
+touch horizontally or vertically, one counterclockwise loop around each hole in a group (most
+notably the light ring of a finder pattern). Diagonal touch does not connect. The opposite winding
+means filling all loops as one path yields the QR code under both the nonzero and the even-odd
+fill rule. Exposed as `QrCode.toOutlines()`; the SVG document, the graphics path and the AWT
+`draw` are built from it, so adjacent shapes cannot show hairline seams.
+*Avoid*: contour.
+
 ## Relationships
 
 - The pipeline is: text or bytes → **data segments** → **codewords** → **module** matrix. A

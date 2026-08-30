@@ -171,6 +171,8 @@ cd qr-code-press
 
 Requires JDK 17 or higher. `verify` runs the tests and lints the javadoc.
 
+To run the unit tests in IntelliJ, modify the run configuration by setting "Do not use --module-path option".
+
 ## License
 
 MIT License. See [LICENSE](LICENSE).

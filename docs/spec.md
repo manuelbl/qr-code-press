@@ -6,8 +6,8 @@ QR Code Press is a Java library for generating QR codes.
 
 - Supports encoding all 40 versions (sizes) and all 4 error correction levels, as per the
   QR Code Model 2 standard
-- Output formats: list of rectangles, raw modules of the QR symbol, SVG document,
-  SVG/XAML graphics path, and PNG
+- Output formats: list of rectangles, outline polygons, raw modules of the QR symbol,
+  SVG document, SVG/XAML graphics path, and PNG
 - Computes optimal segment modes for the smallest possible QR code
 - Structured Append: splits long text across up to 16 linked QR codes
 - ECI support (~50 designators), including automatic Latin-1 / UTF-8 selection, and Kanji mode
@@ -72,6 +72,7 @@ Ecc     getErrorCorrectionLevel()
 int     getMask()
 
 List<QrRectangle> toRectangles()
+List<QrPolygon>   toOutlines()
 String            toSvgString(int border)                                        // black on white
 String            toSvgString(int border, String foreground, String background)
 String            toGraphicsPath(int border)
@@ -79,7 +80,12 @@ byte[]            toPng(int border, int scale)                                  
 byte[]            toPng(int border, int scale, int foreground, int background)
 ```
 
-There is no bulk module accessor. `toRectangles()` covers bulk rendering.
+There is no bulk module accessor. `toRectangles()` and `toOutlines()` cover bulk rendering:
+rectangles for drawing shape by shape, outlines for a single filled path. The outlines trace each
+group of modules that touch horizontally or vertically as a clockwise loop and each hole as a
+counterclockwise loop, so the path fills to the QR code under both the nonzero and the even-odd
+fill rule, and adjacent shapes cannot show hairline seams under anti-aliasing. The SVG document,
+the graphics path and the AWT `draw` are built from the outlines.
 
 ### Errors
 

@@ -18,8 +18,10 @@ written by hand live in the root `CLAUDE.md`.
 - **Reed-Solomon cross-check** (`ReedSolomonTest`). ECC codewords against ZXing's independent
   `ReedSolomonEncoder`.
 - **Render snapshots** (`SvgTest`, `PngTest`). Committed expected output in
-  `src/test/resources/render/`, hand-made and hand-maintained; no exporter writes it. `RectangleTest`
-  and `awt.QrCodeGraphicsTest` pin no files and assert invariants instead. Every rendered image is
+  `src/test/resources/render/`, hand-made and hand-maintained; no exporter writes it. `RectangleTest`,
+  `OutlineTest` and `awt.QrCodeGraphicsTest` pin no files and assert invariants instead — for the
+  outlines, that rasterizing the polygons again, under the nonzero rule and the even-odd rule alike,
+  reproduces exactly the dark modules of every verified case. Every rendered image is
   also decoded again, pixel by pixel and through ZXing's detector, which is what proves the quiet
   zone and scale land where a scanner expects them.
 - **Capacity tests**. The exact maximum payload per (version, ECC, mode), and that one byte more

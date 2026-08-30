@@ -11,7 +11,14 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Creates SVG documents and SVG/XAML graphics paths from the rectangles of a QR code.
+ * Creates SVG documents and SVG/XAML graphics paths from the outline of a QR code.
+ * <p>
+ * The dark modules are drawn as a single path of closed sub-paths, one per outline polygon. A
+ * single path has no seams between adjacent shapes, where anti-aliased rendering would otherwise
+ * show hairlines. The polygons wind holes the other way than groups, so the path needs no
+ * fill-rule attribute: both the nonzero rule (the SVG default) and the even-odd rule (the XAML
+ * default) fill it to the QR code.
+ * </p>
  */
 final class SvgBuilder {
 
@@ -42,7 +49,7 @@ final class SvgBuilder {
                 .append("\t<rect width=\"100%\" height=\"100%\" fill=\"").append(background).append("\"/>\n")
                 .append("\t<path d=\"");
 
-        appendPath(svg, qrCode.toRectangles(), border);
+        appendPath(svg, qrCode.toOutlines(), border);
 
         return svg
                 .append("\" fill=\"").append(foreground).append("\"/>\n")
@@ -61,7 +68,7 @@ final class SvgBuilder {
         checkBorder(qrCode.getSize(), border);
 
         var path = new StringBuilder();
-        appendPath(path, qrCode.toRectangles(), border);
+        appendPath(path, qrCode.toOutlines(), border);
         return path.toString();
     }
 
@@ -77,26 +84,36 @@ final class SvgBuilder {
     }
 
     /**
-     * Appends the path commands for the specified rectangles.
+     * Appends the path commands for the specified polygons, one closed sub-path each.
      * <p>
-     * The numbers are appended digit by digit rather than formatted, so the path does not depend on
-     * the default locale (which would otherwise supply its own minus sign or digits).
+     * The edges of a polygon are strictly axis-parallel, so each becomes a relative {@code h} or
+     * {@code v} command; {@code z} draws the closing edge. The numbers are appended digit by digit
+     * rather than formatted, so the path does not depend on the default locale (which would
+     * otherwise supply its own minus sign or digits).
      * </p>
      */
-    private static void appendPath(StringBuilder path, List<QrRectangle> rectangles, int border) {
-        for (var i = 0; i < rectangles.size(); i += 1) {
-            var rectangle = rectangles.get(i);
+    private static void appendPath(StringBuilder path, List<QrPolygon> polygons, int border) {
+        for (var i = 0; i < polygons.size(); i += 1) {
+            var vertices = polygons.get(i).vertices();
 
-            // the first rectangle starts the path, the others are separated by a space
+            // the first polygon starts the path, the others are separated by a space
             if (i != 0) {
                 path.append(' ');
             }
 
-            path.append('M').append(rectangle.x() + border).append(',').append(rectangle.y() + border)
-                    .append('h').append(rectangle.width())
-                    .append('v').append(rectangle.height())
-                    .append('h').append(-rectangle.width())
-                    .append('z');
+            var first = vertices.get(0);
+            path.append('M').append(first.x() + border).append(',').append(first.y() + border);
+
+            for (var j = 1; j < vertices.size(); j += 1) {
+                var from = vertices.get(j - 1);
+                var to = vertices.get(j);
+                if (to.y() == from.y()) {
+                    path.append('h').append(to.x() - from.x());
+                } else {
+                    path.append('v').append(to.y() - from.y());
+                }
+            }
+            path.append('z');
         }
     }
 }

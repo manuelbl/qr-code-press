@@ -84,15 +84,15 @@ class SvgTest {
         }
 
         @Test
-        @DisplayName("draws one closed sub-path per rectangle, offset by the border")
-        void drawsOneSubPathPerRectangle() {
+        @DisplayName("draws one closed sub-path per outline polygon, offset by the border")
+        void drawsOneSubPathPerPolygon() {
             var qrCode = QrCode.encodeText("A", Ecc.MEDIUM);
 
             var path = qrCode.toGraphicsPath(3);
 
-            // the first rectangle is the top row of the top left finder pattern
-            assertThat(path).startsWith("M3,3h7v1h-7z ").endsWith("z");
-            assertThat(path.split("z", -1)).hasSize(qrCode.toRectangles().size() + 1);
+            // the first polygon is the outer boundary of the top left finder pattern
+            assertThat(path).startsWith("M3,3h7v7h-7z ").endsWith("z");
+            assertThat(path.split("z", -1)).hasSize(qrCode.toOutlines().size() + 1);
         }
 
         @Test
@@ -114,7 +114,7 @@ class SvgTest {
 
             try {
                 Locale.setDefault(Locale.forLanguageTag(languageTag));
-                assertThat(qrCode.toGraphicsPath(0)).isEqualTo(expected).startsWith("M0,0h7v1h-7z");
+                assertThat(qrCode.toGraphicsPath(0)).isEqualTo(expected).startsWith("M0,0h7v7h-7z");
             } finally {
                 Locale.setDefault(saved);
             }

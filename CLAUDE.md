@@ -127,10 +127,15 @@ and must never be mutated**; callers copy first.
 
 ### Rendering
 
-`RectangleBuilder` merges adjacent dark modules into the largest possible non-overlapping
-rectangles, whose union is exactly the dark modules. It is the single source of that geometry.
-`QrCode.toRectangles()` publishes the list, and `SvgBuilder` (SVG document and SVG/XAML path)
-consumes the same list, adding the border when emitting.
+The dark modules render through two geometries. `RectangleBuilder` merges adjacent dark modules
+into the largest possible non-overlapping rectangles, whose union is exactly the dark modules;
+`QrCode.toRectangles()` publishes the list, and `QrCodeGraphics.toBufferedImage` draws it into its
+raster. `OutlineBuilder` traces the dark modules as closed polygons — one clockwise loop per group
+of modules that touch horizontally or vertically, one counterclockwise loop per hole in a group —
+so a single filled path renders without hairline seams and fills correctly under both the nonzero
+and the even-odd rule. `QrCode.toOutlines()` publishes the loops; `SvgBuilder` (SVG document and
+SVG/XAML path) emits them as one path, adding the border, and `QrCodeGraphics.draw` fills them as
+one `Path2D`.
 
 `PngBuilder` writes a 1-bit indexed PNG with a two-entry palette, using only
 `java.util.zip.Deflater` and `CRC32`. That keeps the core on `java.base`, so the library works on

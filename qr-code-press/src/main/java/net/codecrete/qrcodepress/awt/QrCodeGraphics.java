@@ -11,6 +11,7 @@ import net.codecrete.qrcodepress.QrCode;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.geom.Path2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.awt.image.IndexColorModel;
@@ -152,12 +153,22 @@ public final class QrCodeGraphics {
                 graphics.fill(new Rectangle2D.Double(0, 0, dimension, dimension));
             }
 
-            graphics.setPaint(foreground);
-            for (var rectangle : qrCode.toRectangles()) {
-                graphics.fill(new Rectangle2D.Double(
-                        (rectangle.x() + border) * scale, (rectangle.y() + border) * scale,
-                        rectangle.width() * scale, rectangle.height() * scale));
+            // The dark modules are filled as one path tracing their outline, rather than as one
+            // rectangle per block: adjacent shapes would show hairline seams under anti-aliasing.
+            // The outline winds holes the other way, so the nonzero rule fills them light.
+            var path = new Path2D.Double(Path2D.WIND_NON_ZERO);
+            for (var polygon : qrCode.toOutlines()) {
+                var vertices = polygon.vertices();
+                var first = vertices.get(0);
+                path.moveTo((first.x() + border) * scale, (first.y() + border) * scale);
+                for (var i = 1; i < vertices.size(); i += 1) {
+                    var vertex = vertices.get(i);
+                    path.lineTo((vertex.x() + border) * scale, (vertex.y() + border) * scale);
+                }
+                path.closePath();
             }
+            graphics.setPaint(foreground);
+            graphics.fill(path);
         } finally {
             graphics.setPaint(saved);
         }

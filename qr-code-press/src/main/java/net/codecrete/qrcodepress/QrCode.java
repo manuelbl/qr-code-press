@@ -40,8 +40,9 @@ import java.util.List;
  * A QR code renders to an {@linkplain #toSvgString(int) SVG document}, an
  * {@linkplain #toGraphicsPath(int) SVG/XAML graphics path} or a {@linkplain #toPng(int, int) PNG
  * image}. For a graphics library this one does not support directly, {@link #toRectangles()} gives
- * the dark modules as a short list of rectangles to draw, and {@link #getModule(int, int)} reads
- * the modules one by one.
+ * the dark modules as a short list of rectangles to draw, {@link #toOutlines()} traces them as
+ * closed polygons for building a filled path, and {@link #getModule(int, int)} reads the modules
+ * one by one.
  * </p>
  * <p>
  * Instances are immutable and safe to share between threads.
@@ -250,8 +251,9 @@ public final class QrCode {
      * at (0, 0) and each unit is one module. No border is included.
      * </p>
      * <p>
-     * This is the same set of rectangles the SVG output is built from. It is the starting point for
-     * drawing a QR code with a graphics library this one does not support directly.
+     * This is the starting point for drawing a QR code, shape by shape, with a graphics library
+     * this one does not support directly. Where adjacent shapes leave hairline gaps (typically with
+     * anti-aliasing), fill a single path built from {@link #toOutlines()} instead.
      * </p>
      *
      * @return the rectangles
@@ -259,6 +261,29 @@ public final class QrCode {
      */
     public List<QrRectangle> toRectangles() {
         return Collections.unmodifiableList(RectangleBuilder.build(modules));
+    }
+
+    /**
+     * Returns the outline of the dark modules of this QR code, as a list of closed polygons.
+     * <p>
+     * Each polygon traces the boundary of a group of dark modules connected horizontally or
+     * vertically, or of a hole within such a group &mdash; most notably the light ring of a finder
+     * pattern. Polygons around groups run clockwise, polygons around holes counterclockwise, so
+     * filling all of them as one path produces the QR code under both the nonzero and the even-odd
+     * fill rule. This is the geometry the SVG output is built from: a single filled path has no
+     * seams between adjacent shapes, where anti-aliased rendering would otherwise show hairlines.
+     * </p>
+     * <p>
+     * The vertices use the same coordinate system as {@link #getModule(int, int)}, on the grid of
+     * module corners: the top left corner of the QR code is (0, 0) and each unit is one module. No
+     * border is included.
+     * </p>
+     *
+     * @return the polygons, ordered by their start vertex in reading order
+     * @see QrPolygon
+     */
+    public List<QrPolygon> toOutlines() {
+        return Collections.unmodifiableList(OutlineBuilder.build(modules));
     }
 
     /**
@@ -295,9 +320,11 @@ public final class QrCode {
     /**
      * Creates a graphics path of this QR code, valid in SVG and in XAML.
      * <p>
-     * The path draws the dark modules. It uses a coordinate system where each module is one unit
-     * wide and tall, and the top left module is offset by <i>border</i> units in both directions.
-     * It looks like {@code M3,3h7v1h-7z M12,3h1v4h-1z ... M70,71h1v1h-1z} and goes into an SVG
+     * The path draws the dark modules, tracing the {@linkplain #toOutlines() outlines}: one closed
+     * sub-path per polygon, with holes wound the other way, so both the nonzero and the even-odd
+     * fill rule produce the QR code. It uses a coordinate system where each module is one unit wide
+     * and tall, and the top left module is offset by <i>border</i> units in both directions. It
+     * looks like {@code M3,3h7v7h-7z M4,4v5h5v-5z ... M20,21h1v2h-1z} and goes into an SVG
      * {@code <path d="M3,3h..."/>} or a XAML {@code <Path Data="M3,3h..."/>}.
      * </p>
      *
