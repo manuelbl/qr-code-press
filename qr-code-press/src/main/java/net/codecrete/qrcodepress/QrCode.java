@@ -306,6 +306,10 @@ public final class QrCode {
      * The colors are CSS color values, such as {@code "#339966"}, {@code "fuchsia"} or
      * {@code "rgba(137, 23, 89, 0.3)"}.
      * </p>
+     * <p>
+     * If {@code background} is {@code null}, then the background will be omitted and
+     * the area between the QR code modules and the border are transparent.
+     * </p>
      *
      * @param border     the border width, as a multiple of the module size
      * @param foreground the color of the dark modules (CSS color)

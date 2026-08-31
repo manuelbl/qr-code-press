@@ -29,6 +29,10 @@ final class SvgBuilder {
     /**
      * Creates a complete SVG document for the specified QR code.
      *
+     * <p>
+     * Pass {@code null} for {@code background} to omit the background.
+     * </p>
+     *
      * @param qrCode     the QR code
      * @param border     the border width, as a multiple of the module size
      * @param foreground the color of the dark modules, as a CSS color
@@ -37,7 +41,6 @@ final class SvgBuilder {
      */
     static String toSvgString(QrCode qrCode, int border, String foreground, String background) {
         Objects.requireNonNull(foreground, "foreground");
-        Objects.requireNonNull(background, "background");
 
         var dimension = checkBorder(qrCode.getSize(), border);
         var svg = new StringBuilder()
@@ -45,14 +48,16 @@ final class SvgBuilder {
                 .append("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" ")
                 .append("\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n")
                 .append("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 ")
-                .append(dimension).append(' ').append(dimension).append("\" stroke=\"none\">\n")
-                .append("\t<rect width=\"100%\" height=\"100%\" fill=\"").append(background).append("\"/>\n")
-                .append("\t<path d=\"");
+                .append(dimension).append(' ').append(dimension).append("\" stroke=\"none\">\n");
+        if (background != null)
+            svg.append("\t<rect width=\"100%\" height=\"100%\" fill=\"").append(background).append("\"/>\n");
+
+        svg.append("\t<path d=\"");
 
         appendPath(svg, qrCode.toOutlines(), border);
 
         return svg
-                .append("\" fill=\"").append(foreground).append("\"/>\n")
+                .append("\" fill=\"").append(foreground).append("\" shape-rendering=\"crispEdges\"/>\n")
                 .append("</svg>\n")
                 .toString();
     }

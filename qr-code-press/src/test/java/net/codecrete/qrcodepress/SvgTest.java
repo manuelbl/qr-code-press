@@ -58,7 +58,7 @@ class SvgTest {
 
             assertThat(svg)
                     .contains("fill=\"rgb(0, 0, 0)\"/>")
-                    .contains("fill=\"#ff0000\"/>")
+                    .contains("fill=\"#ff0000\"")
                     .doesNotContain("#ffffff");
         }
 
@@ -147,7 +147,6 @@ class SvgTest {
         @DisplayName("null colors are rejected")
         void rejectsNullColors() {
             assertThatNullPointerException().isThrownBy(() -> qrCode.toSvgString(0, null, "#fff"));
-            assertThatNullPointerException().isThrownBy(() -> qrCode.toSvgString(0, "#000", null));
         }
     }
 }

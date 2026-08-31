@@ -14,9 +14,8 @@ import java.util.function.IntFunction;
  * A fixed-size cache of values computed on first use, keyed by a dense small integer.
  * <p>
  * The keys of this library's caches are dense and known in advance &mdash; a version (1&ndash;40),
- * an error correction capacity (1&ndash;255), or a mask pattern crossed with a version &mdash; so
- * the entries live in a plain array rather than a map, and a lookup is an array read and a null
- * check.
+ * an error correction capacity (1&ndash;255), or a mask pattern crossed with a version.
+ * So the entries live in a plain array rather than a map.
  * </p>
  * <p>
  * Values are computed at most once per key from the caller's point of view: threads racing on the
@@ -24,8 +23,8 @@ import java.util.function.IntFunction;
  * one. This is sound only because the computation is pure and its results are interchangeable.
  * </p>
  * <p>
- * The cached values are shared. Callers must not mutate them, and the compute function must not
- * return {@code null} &mdash; a null value is indistinguishable from an empty slot and would be
+ * The cached values are shared. Callers must not mutate them. The compute function must not
+ * return {@code null} as a null value is indistinguishable from an empty slot. It would be
  * recomputed on every lookup.
  * </p>
  *
@@ -58,10 +57,9 @@ final class LazyCache<T> {
         var value = entries.get(index);
         if (value == null) {
             value = compute.apply(index);
-            // Two threads racing on the same key compute equal values. As the two results are
-            // indistinguishable, the loser of the race just adopts the winner's value instead of
-            // the computation being guarded.
             if (!entries.compareAndSet(index, null, value))
+                // lost the race (against another thread computing it),
+                // use the other thread's value
                 value = entries.get(index);
         }
 

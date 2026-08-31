@@ -8,8 +8,11 @@
 package net.codecrete.qrcodepress;
 
 /**
- * Builds the finished module matrix from the interleaved codewords: draws the fixed patterns, fills
- * the payload into the free modules, then selects and applies the mask pattern that scores lowest.
+ * Builds the finished module matrix from the interleaved codewords.
+ * <p>
+ * Draws the fixed patterns, fills the payload into the free modules,
+ * then selects and applies the mask pattern that scores lowest.
+ * </p>
  */
 final class MatrixEncoder {
 
