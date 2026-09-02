@@ -427,3 +427,47 @@ EncodeTextBenchmark.encodeAll      press  avgt    5  5.155 ± 0.072  ms/op
 Over the four entries since the per-layout benchmark was added, version 20 went from 52.010 to
 28.331 µs and version 35 from 142.754 to 75.874 µs, both about 1.85×, and the main workload from
 6.731 to 5.155 ms.
+
+### Segmentation merges blocks in an array
+
+`SegmentCompaction` held its blocks in an `ArrayList` and merged them with `set` and
+`subList(…).clear()`, so every payload paid for the list, for its backing array as it grew, and for
+a sublist view per merge. The blocks now live in a `Block[]`, sized exactly by a counting pass over
+the per-byte modes, and a merge sweep compacts it in place: it reads with one index and writes with
+another, a merged block overwriting the block that absorbed it, so nothing shifts and nothing is
+reallocated. The sweep runs front to back, the direction the compaction wants; running it from the
+back only ever served to shift fewer list elements. The two merge rules, which were an enum with a
+subclass body each, are now a pair of predicates passed to the sweep, and `Block.segmentLength`
+spells out the four mode formulas rather than calling through `DataSegmentMode`.
+
+Output is unchanged, and the checksum below is the one the earlier runs recorded.
+
+Apple M5 Pro (arm64), Temurin 25.0.2+10.
+
+```
+Profile loop: 1500 iterations × 200 payloads × 4 ECC levels
+Total encodeText calls: 1'200'000
+Elapsed: 00:00:07.6 (checksum=48306000)
+```
+
+```
+Benchmark                                         (library)  Mode  Cnt        Score   Error   Units
+EncodeTextBenchmark.encodeAll                         press  avgt   10        5.094 ± 0.034   ms/op
+EncodeTextBenchmark.encodeAll:gc.alloc.rate.norm      press  avgt   10  3696523.408 ± 0.257    B/op
+```
+
+Measured against the same machine and JDK immediately before the change, for comparison:
+
+```
+Benchmark                                         (library)  Mode  Cnt        Score   Error   Units
+EncodeTextBenchmark.encodeAll                         press  avgt   10        5.157 ± 0.030   ms/op
+EncodeTextBenchmark.encodeAll:gc.alloc.rate.norm      press  avgt   10  3886475.898 ± 0.227    B/op
+```
+
+A pass allocates 190 KB less, 4.9 % of what it allocated, or about 237 bytes per `encodeText`. The
+time it buys is 1.2 %, which is barely more than the error bars: segmentation is a small part of an
+encode, and the allocations it dropped were short-lived ones the collector was already handling
+cheaply. Both runs are `-f 2`, ten measurement iterations over two JVMs, because the effect is
+smaller than the shift a single fork can show between runs. This is the first entry to record
+`gc.alloc.rate.norm`; it is the number this change was made for, and unlike the mean it is
+reproducible to the byte.

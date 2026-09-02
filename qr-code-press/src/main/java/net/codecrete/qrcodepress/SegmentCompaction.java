@@ -50,15 +50,17 @@ final class SegmentCompaction {
      */
     static List<DataSegment> buildSegments(ByteSlice data, int version, boolean considerKanjiMode) {
         var blocks = buildBlocks(data, considerKanjiMode);
+        var blockCount = blocks.length;
 
         // The passes run in this order: numeric runs are first absorbed into the alphanumeric runs
         // around them, and whatever remains is then absorbed into binary runs.
-        merge(blocks, version, MergeRule.NUMERIC_INTO_ALPHANUMERIC);
-        merge(blocks, version, MergeRule.ANY_INTO_BINARY);
+        blockCount = mergeBlocks(blocks, blockCount, version, MergePolicy.NUMERIC_INTO_ALPHANUMERIC);
+        blockCount = mergeBlocks(blocks, blockCount, version, MergePolicy.ANY_INTO_BINARY);
 
-        var segments = new ArrayList<DataSegment>(blocks.size());
+        var segments = new ArrayList<DataSegment>(blockCount);
         var offset = 0;
-        for (var block : blocks) {
+        for (var i = 0; i < blockCount; i++) {
+            var block = blocks[i];
             segments.add(block.mode().newSegment(data.slice(offset, block.length())));
             offset += block.length();
         }
@@ -75,22 +77,44 @@ final class SegmentCompaction {
      * @param considerKanjiMode {@code true} if Kanji mode may be used
      * @return the blocks, in the order of the data
      */
-    private static List<Block> buildBlocks(ByteSlice data, boolean considerKanjiMode) {
-        var blocks = new ArrayList<Block>();
+    private static Block[] buildBlocks(ByteSlice data, boolean considerKanjiMode) {
         if (data.length() == 0)
-            return blocks;
+            return new Block[0];
 
         var modes = bestModes(data, considerKanjiMode);
+
+        // create blocks
+        var modeChanges = countModeChanges(modes);
+        var blocks = new Block[modeChanges];
+        var blockCount = 0;
         var blockStart = 0;
+        var previousMode = modes[0];
         for (var i = 1; i < modes.length; i += 1) {
-            if (modes[i] != modes[blockStart]) {
-                blocks.add(new Block(modes[blockStart], i - blockStart));
-                blockStart = i;
-            }
+            var currentMode = modes[i];
+            if (currentMode == previousMode)
+                continue;
+
+            blocks[blockCount] = new Block(previousMode, i - blockStart);
+            blockCount += 1;
+            previousMode = currentMode;
+            blockStart = i;
         }
-        blocks.add(new Block(modes[blockStart], modes.length - blockStart));
+        blocks[blockCount] = new Block(previousMode, modes.length - blockStart);
 
         return blocks;
+    }
+
+    private static int countModeChanges(DataSegmentMode[] modes)
+    {
+        var count = 1;
+        var previousMode = modes[0];
+        for (DataSegmentMode currentMode : modes) {
+            if (currentMode != previousMode) {
+                count += 1;
+                previousMode = currentMode;
+            }
+        }
+        return count;
     }
 
     /**
@@ -147,7 +171,17 @@ final class SegmentCompaction {
          * @return the length, including the header, in bits
          */
         int segmentLength(int version) {
-            return mode.segmentLength(length, version);
+            // Duplicated code for performance
+            return switch (mode) {
+                case BINARY -> 12 + (version <= 9 ? 0 : 8) + length * 8;
+                case NUMERIC -> 14 + (version + 7) / 17 * 2 + (length * 10 + 2) / 3;
+                case ALPHANUMERIC -> 13 + (version + 7) / 17 * 2 + (length * 11 + 1) / 2;
+                case KANJI -> 12 + (version + 7) / 17 * 2 + length * 13 / 2;
+                default -> {
+                    assert false;
+                    yield 0;
+                }
+            };
         }
     }
 
@@ -156,155 +190,192 @@ final class SegmentCompaction {
     // region Merging
 
     /**
-     * Merges neighboring blocks as long as the specified rule applies and merging shortens the
-     * bit stream.
+     * Merges adjacent blocks according to the specified policy, as long as merging shortens the bit stream.
      * <p>
-     * A merge changes the modes next to it, which can enable a further merge, so the blocks are
-     * swept repeatedly until a sweep leaves them unchanged. Each sweep runs from the back so that
-     * removing a block shifts as few of the remaining ones as possible.
+     * The blocks are merged in place. The first {@code blockCount} entries of the array are the
+     * blocks, and the returned count replaces it.
      * </p>
      *
-     * @param blocks  the blocks, modified in place
-     * @param version the QR code version (1&ndash;40)
-     * @param rule    the rule saying which blocks may be merged, and into which mode
+     * @param blocks     the blocks
+     * @param blockCount the number of blocks
+     * @param version    the QR code version (1&ndash;40)
+     * @param policy     the blocks to absorb, and the mode to merge them into
+     * @return the number of blocks after merging
      */
-    private static void merge(List<Block> blocks, int version, MergeRule rule) {
+    private static int mergeBlocks(Block[] blocks, int blockCount, int version, MergePolicy policy) {
+        // A merge can bring two blocks next to each other that were not before, so the passes are
+        // repeated until one of them merges nothing.
         var previousCount = -1;
-        while (blocks.size() > 1 && previousCount != blocks.size()) {
-            previousCount = blocks.size();
-
-            var index = blocks.size() - 1;
-            while (index > 0) {
-                var last = blocks.get(index).mode();
-                var middle = blocks.get(index - 1).mode();
-                var first = index >= 2 ? blocks.get(index - 2).mode() : null;
-
-                // A block enclosed by two blocks of the same mode is a candidate even if merging
-                // it with either neighbor alone would not pay off, as the merged block needs but
-                // one header instead of three.
-                if (first != null && rule.mergesThree(first, middle, last)) {
-                    if (tryMerge(blocks, version, rule.mergedMode(), index - 2, 3))
-                        index -= 1;
-                } else if (rule.mergesTwo(middle, last)) {
-                    tryMerge(blocks, version, rule.mergedMode(), index - 1, 2);
-                }
-
-                index -= 1;
-            }
+        while (blockCount > 1 && blockCount != previousCount) {
+            previousCount = blockCount;
+            blockCount = mergePass(blocks, blockCount, version, policy);
         }
+
+        return blockCount;
     }
 
     /**
-     * Merges the specified blocks if the result is no longer than the blocks separately.
+     * Runs a single merging pass over the blocks, from left to right.
+     * <p>
+     * The surviving blocks are compacted to the front of the array. Merging never creates blocks,
+     * so the target index trails the source index and the array can be its own target.
+     * </p>
      *
-     * @param blocks     the blocks, modified in place
+     * @param blocks     the blocks
+     * @param blockCount the number of blocks
      * @param version    the QR code version (1&ndash;40)
-     * @param mergedMode the mode of the merged block
-     * @param start      the index of the first block to merge
-     * @param count      the number of blocks to merge
-     * @return {@code true} if the blocks were merged
+     * @param policy     the blocks to absorb, and the mode to merge them into
+     * @return the number of blocks after the pass
      */
-    private static boolean tryMerge(List<Block> blocks, int version, DataSegmentMode mergedMode,
-            int start, int count) {
-        var payloadLength = 0;
-        var separateLength = 0;
-        for (var i = start; i < start + count; i += 1) {
-            payloadLength += blocks.get(i).length();
-            separateLength += blocks.get(i).segmentLength(version);
+    private static int mergePass(Block[] blocks, int blockCount, int version, MergePolicy policy) {
+        var processedBlocks = 1;
+        var sourceIndex = 1;
+        while (sourceIndex < blockCount) {
+            // blocks[processedBlocks - 1] is the last block of the pass so far, and the one absorbing further blocks
+            var absorbed = tryMerge(blocks, processedBlocks - 1, sourceIndex, blockCount, version, policy);
+            if (absorbed > 0) {
+                sourceIndex += absorbed;
+            } else {
+                blocks[processedBlocks] = blocks[sourceIndex];
+                processedBlocks += 1;
+                sourceIndex += 1;
+            }
+        }
+
+        return processedBlocks;
+    }
+
+    /**
+     * Tries to merge the block at {@code targetIndex} with the blocks starting at {@code sourceIndex}.
+     * <p>
+     * Three blocks are tried first, as a block the policy absorbs is often surrounded by two blocks
+     * merging with neither of them alone pays off. If three blocks may be merged but merging them is
+     * not shorter, two are not tried: the middle block would remain either way.
+     * </p>
+     *
+     * @param blocks      the blocks
+     * @param targetIndex the index of the absorbing block
+     * @param sourceIndex the index of the first block to absorb
+     * @param blockCount  the number of blocks
+     * @param version     the QR code version (1&ndash;40)
+     * @param policy      the blocks to absorb, and the mode to merge them into
+     * @return the number of absorbed blocks (0, 1 or 2)
+     */
+    private static int tryMerge(Block[] blocks, int targetIndex, int sourceIndex, int blockCount, int version,
+                                MergePolicy policy) {
+        var mode0 = blocks[targetIndex].mode();
+        var mode1 = blocks[sourceIndex].mode();
+
+        if (sourceIndex + 1 < blockCount && policy.canMerge3(mode0, mode1, blocks[sourceIndex + 1].mode()))
+            return mergeIfShorter(blocks, targetIndex, sourceIndex, 2, version, policy.mergedMode) ? 2 : 0;
+
+        if (policy.canMerge2(mode0, mode1))
+            return mergeIfShorter(blocks, targetIndex, sourceIndex, 1, version, policy.mergedMode) ? 1 : 0;
+
+        return 0;
+    }
+
+    /**
+     * Replaces the block at {@code targetIndex} with the merge of it and the {@code count} blocks
+     * starting at {@code sourceIndex}, unless the merged segment is longer than the separate ones.
+     *
+     * @param blocks      the blocks
+     * @param targetIndex the index of the absorbing block
+     * @param sourceIndex the index of the first block to absorb
+     * @param count       the number of blocks to absorb
+     * @param version     the QR code version (1&ndash;40)
+     * @param mergedMode  the mode of the merged block
+     * @return {@code true} if the blocks have been merged
+     */
+    private static boolean mergeIfShorter(Block[] blocks, int targetIndex, int sourceIndex, int count, int version,
+                                          DataSegmentMode mergedMode) {
+        var target = blocks[targetIndex];
+        var payloadLength = target.length();
+        var separateLength = target.segmentLength(version);
+        for (var i = 0; i < count; i += 1) {
+            var block = blocks[sourceIndex + i];
+            payloadLength += block.length();
+            separateLength += block.segmentLength(version);
         }
 
         var mergedBlock = new Block(mergedMode, payloadLength);
         if (mergedBlock.segmentLength(version) > separateLength)
             return false;
 
-        blocks.set(start, mergedBlock);
-        blocks.subList(start + 1, start + count).clear();
+        blocks[targetIndex] = mergedBlock;
         return true;
     }
 
     /**
-     * A rule saying which neighboring blocks are worth testing for a merge.
+     * The blocks a merging pass absorbs, and the mode it merges them into.
      * <p>
-     * The rules only decide which combinations of modes are plausible; whether a plausible merge
-     * actually happens is decided by comparing the bit lengths.
+     * A merge is only ever considered where the merged mode can encode all of the blocks involved.
+     * Whether it is shorter is decided separately, for the blocks at hand.
      * </p>
      */
-    private enum MergeRule {
+    private enum MergePolicy {
 
-        /**
-         * Absorbs a numeric run into the alphanumeric runs around it.
-         * <p>
-         * Numeric mode is the more compact of the two, so this pays off only for short numeric
-         * runs. It runs first because it can leave a single alphanumeric block where there were
-         * three blocks, which the second pass then judges as a whole.
-         * </p>
-         */
+        /** Absorbs numeric blocks into the alphanumeric blocks next to them. */
         NUMERIC_INTO_ALPHANUMERIC(DataSegmentMode.ALPHANUMERIC) {
             @Override
-            boolean mergesThree(DataSegmentMode first, DataSegmentMode middle, DataSegmentMode last) {
-                return first == DataSegmentMode.ALPHANUMERIC && middle == DataSegmentMode.NUMERIC
-                        && last == DataSegmentMode.ALPHANUMERIC;
+            boolean canMerge2(DataSegmentMode mode0, DataSegmentMode mode1) {
+                return (mode0 == DataSegmentMode.ALPHANUMERIC && mode1 == DataSegmentMode.NUMERIC)
+                        || (mode0 == DataSegmentMode.NUMERIC && mode1 == DataSegmentMode.ALPHANUMERIC);
             }
 
             @Override
-            boolean mergesTwo(DataSegmentMode first, DataSegmentMode second) {
-                return (first == DataSegmentMode.ALPHANUMERIC && second == DataSegmentMode.NUMERIC)
-                        || (first == DataSegmentMode.NUMERIC && second == DataSegmentMode.ALPHANUMERIC);
+            boolean canMerge3(DataSegmentMode mode0, DataSegmentMode mode1, DataSegmentMode mode2) {
+                return mode0 == DataSegmentMode.ALPHANUMERIC && mode1 == DataSegmentMode.NUMERIC && mode2 == mode0;
             }
         },
 
         /**
-         * Absorbs a run of any mode into the binary runs around it.
-         * <p>
-         * Binary mode is the least compact one, so it never pays off to move data into it for its
-         * own sake &mdash; only to save the headers of the blocks that disappear.
-         * </p>
+         * Absorbs blocks into the binary blocks next to them, and a non-binary block between two
+         * blocks of equal mode into those two. Binary mode encodes every block, so the second case
+         * needs no restriction beyond the blocks around the absorbed one being alike.
          */
         ANY_INTO_BINARY(DataSegmentMode.BINARY) {
             @Override
-            boolean mergesThree(DataSegmentMode first, DataSegmentMode middle, DataSegmentMode last) {
-                return middle != DataSegmentMode.BINARY && first == last;
+            boolean canMerge2(DataSegmentMode mode0, DataSegmentMode mode1) {
+                return (mode0 == DataSegmentMode.BINARY) != (mode1 == DataSegmentMode.BINARY);
             }
 
             @Override
-            boolean mergesTwo(DataSegmentMode first, DataSegmentMode second) {
-                return (first == DataSegmentMode.BINARY) != (second == DataSegmentMode.BINARY);
+            boolean canMerge3(DataSegmentMode mode0, DataSegmentMode mode1, DataSegmentMode mode2) {
+                return mode1 != DataSegmentMode.BINARY && mode2 == mode0;
             }
         };
 
-        private final DataSegmentMode mergedMode;
+        /** The mode of a block merged by this policy. */
+        final DataSegmentMode mergedMode;
 
-        MergeRule(DataSegmentMode mergedMode) {
+        /**
+         * Creates a new instance.
+         *
+         * @param mergedMode the mode of a merged block
+         */
+        MergePolicy(DataSegmentMode mergedMode) {
             this.mergedMode = mergedMode;
         }
 
         /**
-         * Returns the mode a merged block gets under this rule.
+         * Indicates if two consecutive blocks with the specified modes may be merged.
          *
-         * @return the mode
-         */
-        DataSegmentMode mergedMode() {
-            return mergedMode;
-        }
-
-        /**
-         * Indicates whether three consecutive blocks with the specified modes may be merged.
-         *
-         * @param first  the mode of the first block
-         * @param middle the mode of the block in between
-         * @param last   the mode of the last block
+         * @param mode0 the mode of the first block
+         * @param mode1 the mode of the second block
          * @return {@code true} if they may be merged
          */
-        abstract boolean mergesThree(DataSegmentMode first, DataSegmentMode middle, DataSegmentMode last);
+        abstract boolean canMerge2(DataSegmentMode mode0, DataSegmentMode mode1);
 
         /**
-         * Indicates whether two consecutive blocks with the specified modes may be merged.
+         * Indicates if three consecutive blocks with the specified modes may be merged.
          *
-         * @param first  the mode of the first block
-         * @param second the mode of the second block
+         * @param mode0 the mode of the first block
+         * @param mode1 the mode of the second block
+         * @param mode2 the mode of the third block
          * @return {@code true} if they may be merged
          */
-        abstract boolean mergesTwo(DataSegmentMode first, DataSegmentMode second);
+        abstract boolean canMerge3(DataSegmentMode mode0, DataSegmentMode mode1, DataSegmentMode mode2);
     }
 
     // endregion
