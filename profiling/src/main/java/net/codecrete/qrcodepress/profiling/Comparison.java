@@ -9,6 +9,8 @@ package net.codecrete.qrcodepress.profiling;
 
 import net.codecrete.qrcodepress.Ecc;
 
+import java.util.Locale;
+
 /**
  * Reports what each library produced for the sample set, as opposed to how fast it produced it.
  * <p>
@@ -45,20 +47,20 @@ final class Comparison {
 
         var libraries = Library.values();
         var histograms = new int[libraries.length][MAX_VERSION + 1];
-        var moduleSums = new long[libraries.length];
+        var versionSums = new long[libraries.length];
 
         for (var i = 0; i < libraries.length; i++) {
             for (var payload : payloads) {
                 for (var eccLevel : ECC_LEVELS) {
-                    var size = libraries[i].encode(payload, eccLevel);
-                    moduleSums[i] += size;
-                    histograms[i][versionOf(size)]++;
+                    var version = versionOf(libraries[i].encode(payload, eccLevel));
+                    versionSums[i] += version;
+                    histograms[i][version]++;
                 }
             }
         }
 
         printLibraries(libraries);
-        printModuleSums(libraries, moduleSums);
+        printAverageVersions(libraries, versionSums, payloads.size() * ECC_LEVELS.length);
         printHistogram(libraries, histograms);
     }
 
@@ -69,12 +71,13 @@ final class Comparison {
         System.out.println();
     }
 
-    private static void printModuleSums(Library[] libraries, long[] moduleSums) {
-        // Summed matrix width, not module count: proportional to the size of the QR codes produced
-        // and, unlike a count of the dark modules, unaffected by which mask happened to win.
-        System.out.println("Total matrix size (sum of widths, in modules — smaller is denser encoding)");
+    private static void printAverageVersions(Library[] libraries, long[] versionSums, int encodes) {
+        // The version, not a count of the dark modules: it says how much symbol the payload needed
+        // and is unaffected by which mask happened to win.
+        System.out.println("Average QR code version (smaller is denser encoding)");
         for (var i = 0; i < libraries.length; i++)
-            System.out.printf("  %-8s %d%n", libraries[i].label(), moduleSums[i]);
+            System.out.printf(Locale.ROOT, "  %-8s %.3f%n", libraries[i].label(),
+                    (double) versionSums[i] / encodes);
         System.out.println();
     }
 

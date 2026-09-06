@@ -2,6 +2,7 @@
 
 This file contains measurements of older versions of the library.
 
+
 ## Compact `BitMatrix` rows for versions 1 to 11
 
 A row of at most 64 columns now occupies a single `long` instead of four, and `Penalty` scores it
@@ -36,6 +37,7 @@ about 4× faster, which is simply the four-to-one drop in words scanned. `finder
 23× faster, most of that the branchless match rather than the layout. That match is separable and
 would speed up versions 12 to 40 as well, at the price of carrying the shifts across word
 boundaries — which is what *Branchless finder-pattern match for wide rows* below went on to do.
+
 
 ## Payload target table
 
@@ -80,16 +82,16 @@ generator polynomial once per capacity, 256 rows, each the polynomial times one 
 division step is then a row lookup plus a shift-and-XOR of the remainder, and the log, exp and
 modulo of the old inner loop are gone. The remainder and the rows are padded to whole eight-byte
 words, which lets the step run through a `byte[]` view `VarHandle` and handle eight coefficients per
-machine word. Capacity 30, the largest QR uses, takes four word operations instead of thirty scalar
-ones. The padding is zero and provably stays zero, since the rows are
-zero-padded too and the shift can only move a zero into it. The codewords are now written straight
-into the interleaved result at their stride, so no block needs a buffer of its own. A sampling
-profile put `computeErrorCorrection` at 28% of an encode before the change. Output is unchanged,
-and the checksum below is the one the earlier runs recorded.
+machine word. Capacity 30, the largest a QR code uses, takes four word operations instead of thirty
+scalar ones. The padding is zero and provably stays zero, since the rows are zero-padded too and the
+shift can only move a zero into it. The codewords are now written straight into the interleaved
+result at their stride, so no block needs a buffer of its own. A sampling profile put
+`computeErrorCorrection` at 28% of an encode before the change. Output is unchanged, and the
+checksum below is the one the earlier runs recorded.
 
 The table costs 256 rows of the capacity rounded up to eight bytes, 8 KB at capacity 30, and lives
-in the `LazyCache` that already caches an instance per capacity. QR uses 13 distinct capacities in
-all, so a process that encodes every version at every error correction level holds about 60 KB.
+in the `LazyCache` that already caches an instance per capacity. QR codes use 13 distinct capacities
+in all, so a process that encodes every version at every error correction level holds about 60 KB.
 
 Apple M5 Pro (arm64), Temurin 25.0.2+10.
 
@@ -110,6 +112,7 @@ Measured against the same machine and JDK immediately before the change, for com
 Benchmark                      (library)  Mode  Cnt  Score   Error  Units
 EncodeTextBenchmark.encodeAll      press  avgt    5  8.643 ± 0.120  ms/op
 ```
+
 
 ## A wide `BitMatrix` row holds three words, not four
 
@@ -156,6 +159,7 @@ Benchmark                      (library)  Mode  Cnt  Score   Error  Units
 EncodeTextBenchmark.encodeAll      press  avgt    5  6.545 ± 0.138  ms/op
 ```
 
+
 ## Branchless finder-pattern match for wide rows
 
 The finder-pattern rule matched a compact row by whole words and a wide row by sliding a 15-bit
@@ -199,6 +203,7 @@ entries ago. The main workload, a tenth of which reaches a wide row:
 Benchmark                      (library)  Mode  Cnt  Score   Error  Units
 EncodeTextBenchmark.encodeAll      press  avgt    5  5.624 ± 0.147  ms/op
 ```
+
 
 ## Three row layouts instead of two
 
@@ -253,6 +258,7 @@ Over the four entries since the per-layout benchmark was added, version 20 went 
 28.331 µs and version 35 from 142.754 to 75.874 µs, both about 1.85×, and the main workload from
 6.731 to 5.155 ms.
 
+
 ## Segmentation merges blocks in an array
 
 `SegmentCompaction` held its blocks in an `ArrayList` and merged them with `set` and
@@ -297,13 +303,13 @@ smaller than the shift a single fork can show between runs. This is the first en
 `gc.alloc.rate.norm`; it is the number this change was made for, and unlike the mean it is
 reproducible to the byte.
 
-
-Dell Core Ultra 5
+Dell Core Ultra 5.
 
 ```
 Benchmark                      (library)  Mode  Cnt  Score   Error  Units
 EncodeTextBenchmark.encodeAll      press  avgt    5  4.909 ± 0.080  ms/op
 ```
+
 
 ## Segmentation is optimal, not merely merged
 
@@ -346,8 +352,6 @@ was wider than the difference being measured.
 
 
 ## Minor improvements
-
-### MacBook Pro M5
 
 Apple M5 Pro (arm64), Temurin 25.0.2+10.
 
@@ -404,7 +408,8 @@ EncodeTextBenchmark.encodeAll      press  avgt    5  19.050 ± 0.490  ms/op     
 A pass costs 3.9 times as much, for twice the payloads: the long tail is the rest of it, since
 penalty scoring grows with the square of the version and a fifth of the set now sits above version
 11. `compare` grows worse than that — qrcodegen and ZXing go from 145 and 218 ms/op to 608 and
-942 — and takes minutes rather than the 30 s the section above quotes.
+942 — yet a `compare` run still takes about a minute, because JMH's iterations are bounded by time
+rather than by the number of operations.
 
 `DEFAULT_PROFILE_ITERATIONS` is unchanged at 1500, which is not an oversight: the heavier workload
 puts a `profile` run at 28.3 s, back on the "roughly 30 seconds" its javadoc has always claimed and

@@ -26,8 +26,8 @@ Then, from this directory:
 
 ```sh
 ./mvnw compile exec:exec "-Dprofiling.args=benchmark"
-./mvnw compile exec:exec -Dprofiling.args="profile [N]"
-./mvnw compile exec:exec -Dprofiling.args="compare"
+./mvnw compile exec:exec "-Dprofiling.args=profile [N]"
+./mvnw compile exec:exec "-Dprofiling.args=compare"
 ```
 
 Without arguments, the harness prints its usage.
@@ -37,7 +37,7 @@ Without arguments, the harness prints its usage.
 
 Runs JMH over QR Code Press alone: 1 fork, 5 × 1 s warmup, 5 × 1 s measurement, about 10 s end to
 end. The score is the average time of a full pass over the whole set, and it is the number to record
-in the log below:
+in the [log](LOG.md):
 
 ```
 Benchmark                      (library)  Mode  Cnt   Score   Error  Units
@@ -63,15 +63,15 @@ than as error bars, so if a measurement looks suspicious, re-run it with `-f 2` 
 Two things in the output are expected. On JDK 25, JMH 1.37 prints a handful of
 `WARNING: ... sun.misc.Unsafe` lines as the fork starts; they come from JMH's own internals, not
 from the library. And JMH reports that compiler blackholes are in use, which is why every entry in
-the log below records its JDK.
+the [log](LOG.md) records its JDK.
 
 
 ### `compare`: the other libraries
 
-Runs the same JMH benchmark over qrcodegen and ZXing as well, one row per library, a few minutes end
-to end. The other two libraries are the slow part.
+Runs the same JMH benchmark over qrcodegen and ZXing as well, one row per library, about a minute
+end to end. The other two libraries are the slow part.
 
-It then prints the library versions, the total matrix size and the version histogram, which
+It then prints the library versions, the average QR code version and the version histogram, which
 say what each library produced rather than how fast:
 
 ```
@@ -82,7 +82,6 @@ EncodeTextBenchmark.encodeAll      zxing  avgt    5  940.699 ± 1.293  ms/op
 ```
 
 For details see [COMPARISON](COMPARISON.md).
-
 
 
 ### `profile [N]`: the run to attach a profiler to
@@ -121,12 +120,29 @@ the right one for `profile` but *not* for `benchmark`. JMH measures in a forked 
 options never reach, so use JMH's own profiler there instead:
 
 ```sh
-./mvnw compile exec:exec -Dprofiling.args="benchmark -prof jfr"
+./mvnw compile exec:exec "-Dprofiling.args=benchmark -prof jfr"
 ```
 
-It writes the recording to a directory named after the benchmark, in this directory.
+It writes the recording to a directory named after the benchmark, here in `profiling/`.
 
 
 ## Log
 
-Measurements after each relevant change of the library are recorded in [LOG](LOG.md).
+Measurements for every relevant change to the library are recorded in [LOG](LOG.md).
+
+
+## Latest benchmark results
+
+Apple M5 Pro (arm64), Temurin 25.0.2+10
+
+```
+Benchmark                      (library)  Mode  Cnt   Score   Error  Units
+EncodeTextBenchmark.encodeAll      press  avgt    5  18.871 ± 0.646  ms/op
+```
+
+Dell (Intel Core Ultra 5), Temurin 25.0.4.1+1
+
+```
+Benchmark                      (library)  Mode  Cnt   Score   Error  Units
+EncodeTextBenchmark.encodeAll      press  avgt    5  18.126 ± 1.256  ms/op
+```

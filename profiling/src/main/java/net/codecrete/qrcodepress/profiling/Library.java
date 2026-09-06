@@ -150,8 +150,8 @@ enum Library {
      * Encodes the payload and returns the size of the resulting matrix.
      * <p>
      * The size is what every caller consumes: as a checksum it keeps the encode from being
-     * optimized away, and summed over the workload it says how much matrix each library produced
-     * for the same input.
+     * optimized away, and the version it maps to says how large a symbol each library needed for
+     * the same input.
      * </p>
      *
      * @param payload the text to encode

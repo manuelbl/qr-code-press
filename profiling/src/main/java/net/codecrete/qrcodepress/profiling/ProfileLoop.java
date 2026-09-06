@@ -32,7 +32,7 @@ final class ProfileLoop {
     /**
      * Passes over the whole set before the timed section.
      * <p>
-     * One pass is 800 calls, which leaves the encoder in the interpreter and the tier-1 compiler.
+     * One pass is 1600 calls, which leaves the encoder in the interpreter and the tier-1 compiler.
      * Twenty passes are past C2's compilation thresholds, so both the timing and an attached
      * profiler see steady-state code rather than the JVM warming up.
      * </p>
