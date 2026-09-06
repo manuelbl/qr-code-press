@@ -331,6 +331,9 @@ public final class QrCode {
      * looks like {@code M3,3h7v7h-7z M4,4v5h5v-5z ... M20,21h1v2h-1z} and goes into an SVG
      * {@code <path d="M3,3h..."/>} or a XAML {@code <Path Data="M3,3h..."/>}.
      * </p>
+     * <p>
+     * The resulting graphics path is short, resulting in small SVG or XAML documents.
+     * </p>
      *
      * @param border the border width, as a multiple of the module size
      * @return the graphics path

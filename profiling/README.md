@@ -37,7 +37,7 @@ Without arguments, the harness prints its usage.
 
 Runs JMH over QR Code Press alone: 1 fork, 5 × 1 s warmup, 5 × 1 s measurement, about 10 s end to
 end. The score is the average time of a full pass over the whole set, and it is the number to record
-in the [log](LOG.md):
+in the [log](LOG.md).
 
 ```
 Benchmark                      (library)  Mode  Cnt   Score   Error  Units

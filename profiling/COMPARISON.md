@@ -51,7 +51,7 @@ EncodeTextBenchmark.encodeAll      zxing  avgt    5  1224.043 ± 45.887  ms/op
 
 One score is one pass over the whole set: 400 payloads at 4 error correction levels, 1600 encodes.
 
-QR Code Press is about 30 to 70 times faster than the other libraries.
+QR Code Press is about 20 to 70 times faster than the other libraries.
 
 
 ### QR code size
