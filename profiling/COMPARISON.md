@@ -43,6 +43,15 @@ EncodeTextBenchmark.encodeAll     nayuki  avgt    5  145.560 ± 1.854  ms/op
 EncodeTextBenchmark.encodeAll      zxing  avgt    5  223.098 ± 0.512  ms/op
 ```
 
+Dell (Intel Core Ultra 5), Temurin-25.0.4.1+1, zxing-core 3.5.4, qrcodegen 1.8.0.
+
+```
+Benchmark                      (library)  Mode  Cnt    Score   Error  Units
+EncodeTextBenchmark.encodeAll      press  avgt    5    4.482 ± 0.123  ms/op
+EncodeTextBenchmark.encodeAll     nayuki  avgt    5  208.636 ± 4.611  ms/op
+EncodeTextBenchmark.encodeAll      zxing  avgt    5  287.485 ± 7.229  ms/op
+```
+
 One score is one pass over the whole set: 200 payloads at 4 error correction levels, 800 encodes.
 
 ```

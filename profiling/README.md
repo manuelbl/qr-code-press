@@ -471,3 +471,11 @@ cheaply. Both runs are `-f 2`, ten measurement iterations over two JVMs, because
 smaller than the shift a single fork can show between runs. This is the first entry to record
 `gc.alloc.rate.norm`; it is the number this change was made for, and unlike the mean it is
 reproducible to the byte.
+
+
+### Dell Core Ultra 5
+
+```
+Benchmark                      (library)  Mode  Cnt  Score   Error  Units
+EncodeTextBenchmark.encodeAll      press  avgt    5  4.909 ± 0.080  ms/op
+```

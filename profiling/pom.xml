@@ -91,7 +91,7 @@
                         `java.class.path`, which under `exec:java` is Maven's launcher classpath.
                     -->
                     <executable>java</executable>
-                    <commandlineArgs>${profiling.jvmArgs} -classpath %classpath ${exec.mainClass} ${profiling.args}</commandlineArgs>
+                    <commandlineArgs>-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 ${profiling.jvmArgs} -classpath %classpath ${exec.mainClass} ${profiling.args}</commandlineArgs>
                 </configuration>
             </plugin>
         </plugins>
