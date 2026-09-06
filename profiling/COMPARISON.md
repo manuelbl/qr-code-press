@@ -1,11 +1,12 @@
 # Comparison with other Java QR code libraries
 
-Runs the harness workload against QR Code Press, [qrcodegen](https://github.com/nayuki/QR-Code-generator)
-and [ZXing](https://github.com/zxing/zxing), and reports both how fast each library encodes and what
-it encoded the payloads into.
+This library is compared with other QR code generator libraries:
 
-The second half matters as much as the first. The three libraries do not turn these payloads into
-the same QR codes, so a timing table on its own would be read as three timings of the same work.
+- [qrcodegen](https://github.com/nayuki/QR-Code-generator)
+- [ZXing](https://github.com/zxing/zxing)
+
+The libraries are compared with their default settings (as far as possible).
+See details below.
 
 
 ## Running
@@ -17,7 +18,7 @@ cd ../qr-code-press && ./mvnw install
 ```
 
 ```sh
-./mvnw compile exec:exec -Dprofiling.args="compare"
+./mvnw compile exec:exec "-Dprofiling.args=compare"
 ```
 
 `compare` is the mode for everything on this page. It runs JMH once per library, three rows in one
@@ -25,22 +26,18 @@ table, about 30 s end to end, and then prints the library versions, the total ma
 version histogram. Only the first half is timed; the report prints the same thing on every run and
 every machine.
 
-The other two modes measure QR Code Press alone and have nothing to say here. `benchmark` compares
-a change to the library against a number recorded with an earlier version, where the other two
-libraries would only be a constant. `profile` is for attaching a sampling profiler, where a profile
-is read frame by frame and another library's frames answer a question the profile was not opened to
-ask.
-
 
 ## Results
+
+### Speed
 
 Apple M5 Pro (arm64), Temurin 25.0.2+10, zxing-core 3.5.4, qrcodegen 1.8.0.
 
 ```
 Benchmark                      (library)  Mode  Cnt    Score   Error  Units
-EncodeTextBenchmark.encodeAll      press  avgt    5    8.664 ± 0.129  ms/op
-EncodeTextBenchmark.encodeAll     nayuki  avgt    5  145.560 ± 1.854  ms/op
-EncodeTextBenchmark.encodeAll      zxing  avgt    5  223.098 ± 0.512  ms/op
+EncodeTextBenchmark.encodeAll      press  avgt    5   18.768 ± 0.516  ms/op
+EncodeTextBenchmark.encodeAll     nayuki  avgt    5  614.850 ± 7.698  ms/op
+EncodeTextBenchmark.encodeAll      zxing  avgt    5  940.699 ± 1.293  ms/op
 ```
 
 Dell (Intel Core Ultra 5), Temurin-25.0.4.1+1, zxing-core 3.5.4, qrcodegen 1.8.0.
@@ -52,19 +49,21 @@ EncodeTextBenchmark.encodeAll     nayuki  avgt    5  208.636 ± 4.611  ms/op
 EncodeTextBenchmark.encodeAll      zxing  avgt    5  287.485 ± 7.229  ms/op
 ```
 
-One score is one pass over the whole set: 200 payloads at 4 error correction levels, 800 encodes.
+One score is one pass over the whole set: 400 payloads at 4 error correction levels, 1600 encodes.
+
+This library is about 20 to 60 times faster than the other libraries.
+
+
+### QR code size
 
 ```
 Total matrix size (sum of widths, in modules — smaller is denser encoding)
-  press    32204
-  nayuki   32280
-  zxing    32464
+  press    82296
+  nayuki   83420
+  zxing    83736
 ```
 
-So the fastest of the three is also the one producing the smallest QR codes, by a small margin of
-about 0.2 % against qrcodegen and 0.8 % against ZXing. The version histogram behind those totals is
-printed under them; the three libraries agree on the version for most payloads and differ on the
-ones where segment compaction or the ECI segment tips the balance.
+This library also produces the smallest QR codes.
 
 
 ## What is being compared
@@ -78,87 +77,32 @@ matrix, with no border, no scaling and no image:
 | `nayuki` | `QrCode.encodeText(text, ecc)` | `size` |
 | `zxing` | `Encoder.encode(text, level, {CHARACTER_SET: "UTF-8"})` | `getMatrix().getWidth()` |
 
-Going one level higher would have meant ZXing's `QRCodeWriter`, which also allocates a scaled
-matrix with a quiet zone. The other two libraries leave that to the caller at this point, and this
-library does it in `toRectangles()` and the renderers rather than in `encodeText`.
-
 The payloads are the harness's own set, unchanged and identical for all three libraries. They are
 described in [README.md](README.md) and built by `SampleData`.
 
 
-### Why ZXing is forced to UTF-8
+## Differences between Libraries
 
-Measured against **zxing-core 3.5.4**. Both figures below are properties of that version and should
-be re-checked when it is upgraded.
+- *ZXing* is run with `Encoder.encode(text, level, {CHARACTER_SET: "UTF-8"})`. Using `QRCodeWriter`
+would also allocate a scaled matrix with a quiet zone, leading to an unfair comparison.
 
-`Encoder.encode(text, level)` without hints encodes byte mode as ISO-8859-1 and silently replaces
-whatever does not fit. Of the 200 payloads, 62 contain characters outside ISO-8859-1: emoji, and
-Turkish, Polish, Hungarian and Romanian names and towns. All 62 come back from a decoder as
-something other than what went in. ZXing throws no exception and the QR codes are perfectly valid;
-they simply carry the wrong text. Measuring that against an encoder that carries the text correctly
-would compare two different jobs, so the character set hint is not a tuning choice here but the
-condition for comparing like with like.
+- *ZXing* is forced to use UTF-8. Otherwise it would silently replace non-representable characters with `?`.
+As a side effect, it will add an ECI header to all QR codes to indicate the character set.
+QR Code Press only uses UTF-8 if necessary, and only adds a ECI header if UTF-8 is used.
 
-The hint has a price, and it is charged to ZXing: once set, ZXing appends the ECI header to *every*
-byte-mode payload, including the 138 that ISO-8859-1 would have carried without one. QR Code Press
-adds an ECI segment only when ISO-8859-1 would be lossy. ZXing does have a path that adds ECI
-selectively, the `QR_COMPACT` hint, and it is unusable. Its `MinimalEncoder` throws
-`WriterException: Internal error: failed to encode` on 196 of the 800 encodes, across all 47
-payloads containing surrogate pairs. There is no third option through the public API.
+- *ZXing* does not compact data segments by default, resulting in bigger QR codes.
 
-### Why qrcodegen needs no configuration, and what it leaves out
+- *ZXing* has the `QR_COMPACT` option. It would use UTF-8 and an ECI header only if needed,
+and it would compact the data segments. However, it is buggy and throws
+`WriterException: Internal error: failed to encode` for about a quarter of the sample data.
+It seems unable to deal with Unicode surrogate pairs.
 
-qrcodegen carries every payload correctly without being asked to: its `encodeText` encodes byte mode
-as UTF-8. But it emits no ECI segment, ever, and 79 of the 200 payloads need one.
+- *qrcodegen* does not compact data segments by default resulting in bigger QR codes.
 
-ISO/IEC 18004 defines byte mode without an ECI segment as ISO-8859-1. A strictly conforming reader
-therefore decodes qrcodegen's UTF-8 bytes as Latin-1, and
+- *qrcodegen* encodes text in UTF-8, increasing the size for QR codes with payloads outside the ASCII
+range but within the ISO-8859-1 range.
 
-```
-best-seller/730181/Justo José/Nicosia/Opening hours: ...
-```
+- *qrcodegen* does not add an ECI header to indicate the use of UTF-8. This can potentially lead
+to decoding issues resulting in Mojibake. In practice, most QR code scanners handle it such that the
+correct text results as they correctly guess the character set encoding if no ECI header is used.
 
-comes back as
-
-```
-best-seller/730181/Justo JosÃ©/Nicosia/Opening hours: ...
-```
-
-Omitting the ECI segment is safe only while the text is pure ASCII, where UTF-8 and ISO-8859-1 agree
-byte for byte, which is 121 of the 200 payloads. The remaining 79 are misdeclared. 62 of them
-contain characters outside Latin-1, and the other 17 contain nothing worse than an accented name.
-Those are misdeclared just the same. `é` is one byte in ISO-8859-1 and two in UTF-8, so being
-inside Latin-1 is no protection. Being inside ASCII is.
-
-In practice these codes are usually read correctly, because most readers guess the character set
-instead of trusting what the code declares. That is how the payloads survive here too, since ZXing's
-decoder detects UTF-8 and recovers all 200. But the guess is outside the standard, and a reader that
-declines to guess is entitled to return the mojibake above.
-
-The omission also flatters qrcodegen's totals slightly, since the ECI header it never writes is one
-that QR Code Press pays for on 62 payloads and ZXing on 195 of the 200 (every payload it does not
-put in alphanumeric mode). Even so, qrcodegen sums to more matrix than QR Code Press.
-
-
-### Differences left in place
-
-Two more differences are not corrected, because they are what each library does rather than
-something the harness chose. Both are visible in the totals above.
-
-- **Error correction boosting.** QR Code Press and qrcodegen raise the error correction level when a
-  higher level fits the same version, so a code nominally encoded at `LOW` is often better protected
-  than that. ZXing does not.
-- **Segment compaction.** QR Code Press splits a payload into segments of the cheapest mode and
-  merges them while that shortens the bit stream. qrcodegen's `encodeText` picks one mode for the
-  whole string, and ZXing does the same on the path measured here. Both libraries have an optimizing
-  variant, `QrSegmentAdvanced.makeSegmentsOptimally` and the `QR_COMPACT` hint, and neither is what
-  their `encodeText` equivalent calls.
-
-
-## Caveats
-
-The usual one for benchmarks applies twice over here. The numbers are comparable only within one
-machine and one JDK, and only for this payload set. The set is chosen to exercise *this* library's
-encoder, weighted towards versions 1 to 11, with about a tenth of the payloads in the version 10 to
-20 range, and a set of different shape would move the ratios. It also says nothing about decoding,
-about the other symbologies ZXing supports, or about anything above the module matrix.

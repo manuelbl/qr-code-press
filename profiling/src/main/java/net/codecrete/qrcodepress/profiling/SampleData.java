@@ -7,7 +7,6 @@
 
 package net.codecrete.qrcodepress.profiling;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Random;
 
@@ -19,8 +18,18 @@ import java.util.Random;
  * ECI segment.
  * </p>
  * <p>
- * About 10&nbsp;% of the payloads are grown into the
- * {@value #LONG_PAYLOAD_MIN_BYTES}–{@value #LONG_PAYLOAD_MAX_BYTES} byte range, which spans versions 10 to 20.
+ * A fifth of the payloads are grown into the {@value #MIN_LONG_PAYLOAD_LENGTH}–{@value
+ * #MAX_LONG_PAYLOAD_LENGTH} character range, which reaches versions well above 11 and, at the
+ * upper end and error correction level {@code HIGH}, into the thirties. The rest almost always land
+ * in versions 1 to 11.
+ * </p>
+ * <p>
+ * The generator mirrors the one in the .NET library
+ * <a href="https://github.com/manuelbl/QrCodeGenerator">QrCodeGenerator</a>, so a measurement here
+ * and a measurement there describe the same workload. The two draw from different random number
+ * generators and so produce different payloads; what they share is the distribution — the mix of
+ * URLs, delimited data and long text, the length range of each, and the pools they are composed
+ * from.
  * </p>
  * <p>
  * The generator is deterministic: same seed, same call sequence, same payloads on every run.
@@ -30,27 +39,16 @@ final class SampleData {
 
     private static final int SEED = 0x53f0cc2b;
 
-    private static final int PAYLOAD_COUNT = 200;
+    private static final int PAYLOAD_COUNT = 400;
 
-    /** Share of payloads grown into the long tail. */
-    private static final double LONG_PAYLOAD_PROBABILITY = 0.1;
+    /** Share of payloads composed as long text. */
+    private static final double LONG_PAYLOAD_PROBABILITY = 0.2;
 
-    /** Lower end of the long tail, in encoded bytes. */
-    private static final int LONG_PAYLOAD_MIN_BYTES = 250;
+    /** Lower end of the long tail, in characters. */
+    private static final int MIN_LONG_PAYLOAD_LENGTH = 400;
 
-    /** Upper end of the long tail, in encoded bytes. */
-    private static final int LONG_PAYLOAD_MAX_BYTES = 380;
-
-    /**
-     * Largest payload the workload may contain, in encoded bytes.
-     * <p>
-     * All four error correction levels are applied to every payload, so the binding constraint is
-     * {@code HIGH}, where 382 bytes is the last length still fitting version 20. Asserting the
-     * ceiling while the payloads are built turns a pool edit that overshoots into a failure at
-     * startup rather than a {@code DataTooLongException} in the middle of a measurement.
-     * </p>
-     */
-    private static final int MAX_PAYLOAD_BYTES = 382;
+    /** Upper end of the long tail, in characters. */
+    private static final int MAX_LONG_PAYLOAD_LENGTH = 900;
 
     private static final String[] BASE_URLS = {
         "https://www.example.com",
@@ -70,7 +68,8 @@ final class SampleData {
     private static final String[] PATH_SEGMENTS = {
         "products", "catalog", "article", "profile", "order", "checkout",
         "news", "2026", "user", "settings", "download", "help", "support",
-        "gallery", "images", "docs", "reference", "faq", "privacy", "terms"
+        "gallery", "images", "docs", "reference", "faq", "privacy", "terms",
+        "D7443263-87A9-4005-AA3C-29C9022AAA82", "9282048710236882340483"
     };
 
     private static final String[] QUERY_KEYS = {
@@ -83,7 +82,8 @@ final class SampleData {
         "electronics", "best-seller", "2026-04", "a1b2c3d4", "trending", "organic",
         "pk_live_ABC123", "user%2F42", "100%25off", "free+shipping", "price%3C50",
         "cHJlc2VudHNsZXB0Y2xpbWJ", "83.2328", "9830212",
-        "3D8EBAD8-9E22-4CBC-B83B-3FD9477DE657"
+        "3D8EBAD8-9E22-4CBC-B83B-3FD9477DE657", "A608C518-54E0-44DB-BC35-746BD7BBBB21",
+        "ADDRESS,PHONE", "39D5B3A9C01FF37E0"
     };
 
     private static final String[] SENTENCES = {
@@ -172,13 +172,12 @@ final class SampleData {
     private static List<String> buildPayloads() {
         var random = new Random(SEED);
         var payloads = new String[PAYLOAD_COUNT];
-        var builder = new StringBuilder(512);
+        var builder = new StringBuilder(1024);
 
         for (var i = 0; i < payloads.length; i++) {
             builder.setLength(0);
             composePayload(builder, random);
             payloads[i] = builder.toString();
-            checkLength(payloads[i]);
         }
 
         return List.of(payloads);
@@ -191,6 +190,52 @@ final class SampleData {
             composeUrl(builder, random);
         } else {
             composeData(builder, random);
+        }
+    }
+
+    /**
+     * Appends fragments until the payload reaches a target length drawn for it.
+     * <p>
+     * The target is a character count rather than an encoded byte count, which is what the .NET
+     * harness measures; the byte length is an outcome, and an emoji-heavy payload therefore carries
+     * more bytes than characters. The loop stops as soon as the target is reached, so the result
+     * overshoots it by at most one fragment plus its separator.
+     * </p>
+     */
+    private static void composeLongText(StringBuilder builder, Random random) {
+        var targetLength = random.nextInt(MIN_LONG_PAYLOAD_LENGTH, MAX_LONG_PAYLOAD_LENGTH + 1);
+
+        while (builder.length() < targetLength) {
+            if (builder.length() > 0)
+                builder.append(' ');
+            appendFragment(builder, random);
+        }
+    }
+
+    /**
+     * Appends one fragment of a long payload.
+     * <p>
+     * The fragments mix numeric, alphanumeric and byte mode content, so that segment compaction has
+     * work to do at these lengths as well and a long payload is not simply one large byte-mode
+     * segment.
+     * </p>
+     */
+    private static void appendFragment(StringBuilder builder, Random random) {
+        var rnd = random.nextDouble();
+        if (rnd < 0.35) {
+            builder.append(pick(SENTENCES, random));
+        } else if (rnd < 0.55) {
+            builder.append(pick(NAMES, random));
+            builder.append(", ");
+            builder.append(pick(TOWNS, random));
+        } else if (rnd < 0.70) {
+            composeUrl(builder, random);
+        } else if (rnd < 0.80) {
+            builder.append(pick(MESSAGES, random));
+        } else if (rnd < 0.90) {
+            builder.append(random.nextInt(1, 100_000_000));
+        } else {
+            builder.append(pick(QUERY_VALUES, random));
         }
     }
 
@@ -233,7 +278,7 @@ final class SampleData {
         }
 
         if (random.nextDouble() < 0.5) {
-            builder.append(random.nextInt(1, 1_000_000));
+            builder.append(random.nextLong(1, 1_000_000_000_000_000L));
             builder.append(delimiter);
         }
 
@@ -255,54 +300,6 @@ final class SampleData {
             builder.append(pick(MESSAGES, random));
             builder.append(delimiter);
         }
-    }
-
-    /**
-     * Appends sentences, messages and names until the payload reaches the long tail.
-     * <p>
-     * The loop stops as soon as the payload is long enough, so the result exceeds
-     * {@link #LONG_PAYLOAD_MIN_BYTES} by at most the longest pool entry plus its separator. That is
-     * what keeps the payload below {@link #LONG_PAYLOAD_MAX_BYTES} without a retry, and a pool edit
-     * long enough to break it is caught by {@link #checkLength}.
-     * </p>
-     */
-    private static void composeLongText(StringBuilder builder, Random random) {
-        while (encodedLength(builder) < LONG_PAYLOAD_MIN_BYTES) {
-            if (builder.length() > 0)
-                builder.append(' ');
-
-            var rnd = random.nextDouble();
-            if (rnd < 0.6) {
-                builder.append(pick(SENTENCES, random));
-            } else if (rnd < 0.8) {
-                builder.append(pick(MESSAGES, random));
-            } else {
-                builder.append(pick(NAMES, random));
-            }
-        }
-    }
-
-    private static void checkLength(String payload) {
-        var length = encodedLength(payload);
-        if (length > MAX_PAYLOAD_BYTES)
-            throw new IllegalStateException(String.format(
-                    "Payload of %d bytes exceeds the %d bytes fitting version 20 at error correction level HIGH: %s",
-                    length, MAX_PAYLOAD_BYTES, payload));
-    }
-
-    /**
-     * Returns the number of bytes the payload occupies once encoded.
-     * <p>
-     * This mirrors what {@code encodeText} does with automatic ECI: ISO-8859-1 where that is
-     * lossless, UTF-8 with an ECI segment otherwise.
-     * </p>
-     */
-    private static int encodedLength(CharSequence payload) {
-        var text = payload.toString();
-        var latin1 = text.getBytes(StandardCharsets.ISO_8859_1);
-        if (new String(latin1, StandardCharsets.ISO_8859_1).equals(text))
-            return latin1.length;
-        return text.getBytes(StandardCharsets.UTF_8).length;
     }
 
     private static String pick(String[] pool, Random random) {

@@ -25,14 +25,10 @@ import java.util.Locale;
  *   <li>{@code compare} — runs the same JMH benchmark over every library and then reports what each
  *   one produced for the same payloads, which is what keeps the three rows from being read as three
  *   timings of the same work.</li>
- *   <li>{@code bands} — runs a different JMH benchmark, one encode per row layout of the module
- *   matrix, for a change that applies to some versions and not others and would disappear into the
- *   noise of the main workload.</li>
  * </ul>
  * <p>
  * {@code benchmark} and {@code compare} differ in one thing only, the set of libraries measured,
- * which each one passes to JMH as {@code -p library=…}. Every mode names the benchmark class it
- * runs, so adding a class does not change what an existing mode measures.
+ * which each one passes to JMH as {@code -p library=…}.
  * </p>
  */
 @SuppressWarnings("java:S106")
@@ -51,7 +47,7 @@ public final class Main {
     /**
      * Runs the harness in the mode given as the first argument.
      *
-     * @param args the mode ({@code benchmark}, {@code compare}, {@code bands}, {@code profile} or
+     * @param args the mode ({@code benchmark}, {@code compare}, {@code profile} or
      *             {@code help}) and its arguments
      * @throws IOException if JMH cannot write its results
      */
@@ -66,8 +62,6 @@ public final class Main {
                 System.out.println();
                 Comparison.run();
             }
-
-            case "bands" -> runJmh(args, PenaltyBandBenchmark.class.getSimpleName());
 
             case "profile" -> {
                 var iterations = DEFAULT_PROFILE_ITERATIONS;
@@ -91,30 +85,24 @@ public final class Main {
     }
 
     /**
-     * Runs {@link EncodeTextBenchmark} over the given libraries.
+     * Runs JMH over {@link EncodeTextBenchmark} for the given libraries, with everything after the
+     * mode appended to JMH's own command line, so options such as {@code -prof gc} or {@code -f 2}
+     * work without being plumbed through here.
+     * <p>
+     * The class name is JMH's include pattern. Without it a run would measure every benchmark on
+     * the class path, so a mode's output would change whenever a benchmark class is added.
+     * </p>
      * <p>
      * The libraries come first, and a {@code -p library=…} of the caller's own would therefore add
      * to them rather than replace them: the mode is the way to choose which libraries are measured.
      * </p>
      */
     private static void runBenchmark(String[] args, String libraries) throws IOException {
-        runJmh(args, EncodeTextBenchmark.class.getSimpleName(), "-p", "library=" + libraries);
-    }
-
-    /**
-     * Runs JMH over the named benchmark class, with everything after the mode appended to JMH's own
-     * command line, so options such as {@code -prof gc} or {@code -f 2} work without being plumbed
-     * through here.
-     * <p>
-     * The class name is JMH's include pattern, and every mode passes one. Without it a run would
-     * measure every benchmark on the class path, so a mode's output would change whenever a
-     * benchmark class is added.
-     * </p>
-     */
-    private static void runJmh(String[] args, String... leadingArgs) throws IOException {
-        var jmhArgs = new String[leadingArgs.length + args.length - 1];
-        System.arraycopy(leadingArgs, 0, jmhArgs, 0, leadingArgs.length);
-        System.arraycopy(args, 1, jmhArgs, leadingArgs.length, args.length - 1);
+        var jmhArgs = new String[args.length + 2];
+        jmhArgs[0] = EncodeTextBenchmark.class.getSimpleName();
+        jmhArgs[1] = "-p";
+        jmhArgs[2] = "library=" + libraries;
+        System.arraycopy(args, 1, jmhArgs, 3, args.length - 1);
         org.openjdk.jmh.Main.main(jmhArgs);
     }
 
@@ -127,9 +115,6 @@ public final class Main {
         System.out.println("  ./mvnw compile exec:exec -Dprofiling.args=\"compare\"");
         System.out.println("      Run it over every library, then report what each one produced");
         System.out.println("      for the same payloads.");
-        System.out.println("  ./mvnw compile exec:exec -Dprofiling.args=\"bands\"");
-        System.out.println("      Run one encode per row layout of the module matrix, so that a");
-        System.out.println("      change confined to some versions is visible on a row of its own.");
         System.out.println("  ./mvnw compile exec:exec -Dprofiling.args=\"profile [N]\"");
         System.out.printf("      Run a plain loop of N iterations (default %d) over QR Code Press,%n",
                 DEFAULT_PROFILE_ITERATIONS);

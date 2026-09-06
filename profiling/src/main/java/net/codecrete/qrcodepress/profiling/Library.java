@@ -76,7 +76,7 @@ enum Library {
      * ZXing's <a href="https://github.com/zxing/zxing">core</a>, forced to UTF-8.
      * <p>
      * Without the character set hint, ZXing encodes byte mode as ISO-8859-1 and silently replaces
-     * whatever does not fit, so 62 of the 200 sample payloads decode back as something other than
+     * whatever does not fit, so 152 of the 400 sample payloads decode back as something other than
      * what was encoded. The hint is therefore not a tuning choice but the condition for comparing
      * like with like.
      * </p>
