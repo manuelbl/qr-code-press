@@ -58,8 +58,8 @@ final class SegmentCompaction {
         assignModes(blocks, version);
 
         // Consecutive blocks assigned the same mode form a single segment, so the assigned modes
-        // are counted first and the list never has to grow.
-        var segments = new ArrayList<DataSegment>(countModeChanges(blocks));
+        // are counted first and the list never has to grow. One element of spare capacity for the ECI segment.
+        var segments = new ArrayList<DataSegment>(countModeChanges(blocks) + 1);
         var offset = 0;
         var length = 0;
         for (var i = 0; i < blocks.length; i += 1) {

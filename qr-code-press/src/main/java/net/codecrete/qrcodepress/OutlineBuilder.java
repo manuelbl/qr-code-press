@@ -92,7 +92,7 @@ final class OutlineBuilder {
         var vx = x;
         var vy = y;
         var direction = EAST;
-        while (true) {
+        do {
             if (direction == EAST) {
                 walkedEastEdges.set(vx, vy, true);
             }
@@ -108,10 +108,7 @@ final class OutlineBuilder {
             // The loop is closed when the walk is about to repeat the edge it started on. The
             // start vertex alone is not enough: a loop pinched at the start vertex passes through
             // it twice, in different directions.
-            if (vx == x && vy == y && direction == EAST) {
-                break;
-            }
-        }
+        } while (vx != x || vy != y || direction != EAST);
 
         return new QrPolygon(rotateToTopLeft(vertices));
     }

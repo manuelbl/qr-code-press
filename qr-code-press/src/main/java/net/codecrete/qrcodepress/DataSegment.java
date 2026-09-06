@@ -7,12 +7,8 @@
 
 package net.codecrete.qrcodepress;
 
-import java.nio.CharBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
-import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -249,34 +245,31 @@ public abstract sealed class DataSegment
      */
     static List<DataSegment> fromBinary(ByteSlice data, Eci eci, int version, boolean considerKanjiMode) {
         var dataSegments = SegmentCompaction.buildSegments(data, version, considerKanjiMode);
-        if (Eci.NONE.equals(eci))
-            return dataSegments;
-
-        var segments = new ArrayList<DataSegment>(dataSegments.size() + 1);
-        segments.add(new DataSegmentEci(eci));
-        segments.addAll(dataSegments);
-        return segments;
+        if (!Eci.NONE.equals(eci))
+            dataSegments.add(0, new DataSegmentEci(eci));
+        return dataSegments;
     }
 
     /**
      * Encodes the specified text as ISO-8859-1.
+     * <p>
+     * The scan rejects the text at the first character ISO-8859-1 cannot represent, unpaired
+     * surrogates included, as the entire surrogate range lies above U+00FF. A text that survives
+     * the scan consists of Latin-1 characters only and is therefore held in the compact form,
+     * which makes the encoding a copy of the string's internal array.
+     * </p>
      *
      * @param text the text
      * @return the encoded text, or {@code null} if it contains characters ISO-8859-1 cannot
      *         represent
      */
+    @SuppressWarnings("java:S1168")
     static byte[] encodeAsLatin1(String text) {
-        var encoder = StandardCharsets.ISO_8859_1.newEncoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
-        try {
-            var encoded = encoder.encode(CharBuffer.wrap(text));
-            var data = new byte[encoded.remaining()];
-            encoded.get(data);
-            return data;
-        } catch (CharacterCodingException e) {
-            return null;
-        }
+        var length = text.length();
+        for (var i = 0; i < length; i += 1)
+            if (text.charAt(i) > 0xFF)
+                return null;
+        return text.getBytes(StandardCharsets.ISO_8859_1);
     }
 
     // endregion
