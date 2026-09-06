@@ -73,8 +73,9 @@ each call site.
 
 **Compaction**
 : Choosing the segmentation with the shortest bit stream: assign each byte its cheapest mode, group
-consecutive bytes into blocks, then merge adjacent blocks while merging shortens the stream. This
-is what "smallest possible QR code" means in this library.
+consecutive bytes into blocks, then let a dynamic programme assign each block the mode of the
+segment encoding it, minimizing the bit stream as a whole. The result is the shortest of all
+segmentations, which is what "smallest possible QR code" means in this library.
 *Avoid*: "optimization" as a name for this step. It is about segment boundaries in particular.
 
 **Slice**

@@ -479,3 +479,42 @@ reproducible to the byte.
 Benchmark                      (library)  Mode  Cnt  Score   Error  Units
 EncodeTextBenchmark.encodeAll      press  avgt    5  4.909 ± 0.080  ms/op
 ```
+
+### Segmentation is optimal, not merely merged
+
+`SegmentCompaction` used to merge adjacent blocks whenever a merge shortened the bit stream, which
+is a local rule and therefore not always the shortest segmentation. A dynamic programme over the
+blocks replaced it, the same one the .NET
+[QrCodeGenerator](https://github.com/manuelbl/QrCodeGenerator) uses, and the result is now the
+shortest bit stream of any segmentation. This is the one entry in this log whose change is to the
+*output*, so the numbers below say what it cost rather than what it bought. One case in the verified
+data moved, by 12 bits.
+
+The merge passes ran repeatedly over the block array and allocated nothing; the dynamic programme
+runs once and allocates five small arrays, two of them per block. The segment list is sized by
+counting the assigned modes rather than from the block count, since most blocks end up sharing a
+segment and the block count would over-allocate the list on nearly every payload.
+
+Dell Core Ultra 5, Temurin 25.0.4.1+1.
+
+```
+Benchmark                                         (library)  Mode  Cnt        Score      Error   Units
+EncodeTextBenchmark.encodeAll                         press  avgt   20        4.556 ±    0.046   ms/op
+EncodeTextBenchmark.encodeAll:gc.alloc.rate.norm      press  avgt   20  3813271.982 ± 7406.911    B/op
+```
+
+Measured against the same machine and JDK immediately before the change, for comparison:
+
+```
+Benchmark                                         (library)  Mode  Cnt        Score       Error   Units
+EncodeTextBenchmark.encodeAll                         press  avgt   20        4.587 ±     0.183   ms/op
+EncodeTextBenchmark.encodeAll:gc.alloc.rate.norm      press  avgt   20  3757320.164 ±  54317.980    B/op
+```
+
+The mean does not move: the two runs differ by less than either error bar. A pass allocates about
+56 KB more, 1.5 % of the total, or some 70 bytes per `encodeText`. Both runs are `-f 4`, twenty
+measurement iterations over four JVMs, and even so the allocation figure is not the reproducible
+one the previous entry recorded — its error is thousands of bytes rather than fractions of one,
+because the arrays are small enough that escape analysis eliminates some of them in some forks and
+not in others. That is also why the comparison needs four forks: at two, the baseline's own spread
+was wider than the difference being measured.

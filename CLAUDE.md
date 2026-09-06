@@ -55,10 +55,14 @@ Text or bytes → segments → codewords → module matrix.
    segment. Segments hold a `ByteSlice` view into an array the *library* owns, so splitting a
    payload copies nothing and a caller can never mutate a segment's payload afterwards.
 2. **`SegmentCompaction`** assigns each byte the cheapest mode (numeric, alphanumeric, Kanji,
-   binary), groups consecutive bytes into blocks, then merges adjacent blocks while merging
-   shortens the bit stream. Merge cost depends on the version, because the character count
-   indicator changes width at versions 1, 10 and 27. This produces the "smallest possible QR code"
-   claim.
+   binary), groups consecutive bytes into blocks, then solves a shortest-path problem over them —
+   one node per (block, mode), the choice at each step being whether to continue the previous
+   block's segment or to pay a header and start a new one. The result is the shortest bit stream of
+   *any* segmentation, not merely a short one, which is the "smallest possible QR code" claim; the
+   library shares the algorithm with .NET
+   [QrCodeGenerator](https://github.com/manuelbl/QrCodeGenerator). Costs depend on the version,
+   because the character count indicator changes width at versions 1, 10 and 27, and they are
+   counted in sixths of a bit so that the fractional per-byte costs stay exact.
 3. **`QrCodeBuilder.build`** wires the remaining stages, each a package-private static class:
    - **`VersionPlanner.plan`** picks the smallest version that fits, then raises the error
      correction level for free if that does not need a larger version.

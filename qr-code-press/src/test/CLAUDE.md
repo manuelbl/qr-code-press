@@ -26,6 +26,10 @@ written by hand live in the root `CLAUDE.md`.
   zone and scale land where a scanner expects them.
 - **Capacity tests**. The exact maximum payload per (version, ECC, mode), and that one byte more
   throws `DataTooLongException`. This pins the transcribed ISO/IEC 18004 tables.
+- **Exhaustive oracle** (`SegmentCompactionTest.matchesExhaustiveOptimum`). Compaction claims the
+  shortest bit stream of *any* segmentation, so it is held to a brute-force search over the
+  segmentations of the bytes. The oracle shares neither the blocks, the cost model nor the length
+  formulas of the code it checks, which is why the payloads are short enough to search exhaustively.
 - **Stage fixtures**. Segment compaction, codewords, fixed patterns, mask patterns and the
   Structured Append split are each pinned against the verified test data, so a defect surfaces in the
   stage that caused it rather than six steps later as a wrong QR code. The split fixture is the only

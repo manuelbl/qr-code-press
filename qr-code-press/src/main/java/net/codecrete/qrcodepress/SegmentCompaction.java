@@ -14,15 +14,17 @@ import java.util.List;
  * Splits data into the sequence of data segments with the shortest bit stream.
  * <p>
  * Each byte is first assigned the mode that encodes it in the fewest bits, and consecutive bytes
- * with the same mode are collected into blocks. Since every block costs a mode indicator and a
- * character count indicator, a block is not always worth having: a short numeric run between two
- * alphanumeric runs is cheaper as part of the alphanumeric segment than as a segment of its own.
- * The blocks are therefore merged as long as merging shortens the bit stream.
+ * with the same mode are collected into blocks. Since every segment costs a mode indicator and a
+ * character count indicator, a block is not always worth a segment of its own: a short numeric run
+ * between two alphanumeric runs is cheaper as part of the alphanumeric segment around it. A dynamic
+ * program therefore assigns each block the segment mode minimizing the length of the entire bit
+ * stream, and consecutive blocks sharing a mode become one segment.
  * </p>
  * <p>
- * The result depends on the QR code version, as the width of the character count indicator does.
- * In edge cases, a different version yields a slightly different &mdash; and slightly longer
- * &mdash; segmentation. The difference is a few bits at most.
+ * The result is the shortest bit stream any segmentation of the data achieves, not merely a shorter
+ * one. It depends on the QR code version, as the width of the character count indicator does, but
+ * only through it: the versions 1&ndash;9, 10&ndash;26 and 27&ndash;40 each share their indicator
+ * widths, so all versions of a group yield the same segmentation.
  * </p>
  */
 final class SegmentCompaction {
@@ -50,19 +52,23 @@ final class SegmentCompaction {
      */
     static List<DataSegment> buildSegments(ByteSlice data, int version, boolean considerKanjiMode) {
         var blocks = buildBlocks(data, considerKanjiMode);
-        var blockCount = blocks.length;
+        if (blocks.length == 0)
+            return new ArrayList<>();
 
-        // The passes run in this order: numeric runs are first absorbed into the alphanumeric runs
-        // around them, and whatever remains is then absorbed into binary runs.
-        blockCount = mergeBlocks(blocks, blockCount, version, MergePolicy.NUMERIC_INTO_ALPHANUMERIC);
-        blockCount = mergeBlocks(blocks, blockCount, version, MergePolicy.ANY_INTO_BINARY);
+        assignModes(blocks, version);
 
-        var segments = new ArrayList<DataSegment>(blockCount);
+        // Consecutive blocks assigned the same mode form a single segment, so the assigned modes
+        // are counted first and the list never has to grow.
+        var segments = new ArrayList<DataSegment>(countModeChanges(blocks));
         var offset = 0;
-        for (var i = 0; i < blockCount; i++) {
-            var block = blocks[i];
-            segments.add(block.mode().newSegment(data.slice(offset, block.length())));
-            offset += block.length();
+        var length = 0;
+        for (var i = 0; i < blocks.length; i += 1) {
+            length += blocks[i].length();
+            if (i + 1 == blocks.length || blocks[i + 1].mode() != blocks[i].mode()) {
+                segments.add(blocks[i].mode().newSegment(data.slice(offset, length)));
+                offset += length;
+                length = 0;
+            }
         }
 
         return segments;
@@ -117,6 +123,19 @@ final class SegmentCompaction {
         return count;
     }
 
+    private static int countModeChanges(Block[] blocks)
+    {
+        var count = 1;
+        var previousMode = blocks[0].mode();
+        for (var block : blocks) {
+            if (block.mode() != previousMode) {
+                count += 1;
+                previousMode = block.mode();
+            }
+        }
+        return count;
+    }
+
     /**
      * Determines the mode encoding each byte in the fewest bits.
      * <p>
@@ -158,224 +177,192 @@ final class SegmentCompaction {
 
     /**
      * A run of consecutive bytes to be encoded in a single mode.
-     *
-     * @param mode   the encoding mode
-     * @param length the number of bytes
      */
-    private record Block(DataSegmentMode mode, int length) {
+    private static class Block {
+        private DataSegmentMode mode;
+        private final int length;
+
+        Block(DataSegmentMode mode, int length) {
+            this.mode = mode;
+            this.length = length;
+        }
 
         /**
-         * Returns the length of the segment this block would become.
-         *
-         * @param version the QR code version (1&ndash;40)
-         * @return the length, including the header, in bits
+         * The encoding mode
+         * @return the mode
          */
-        int segmentLength(int version) {
-            // Duplicated code for performance
-            return switch (mode) {
-                case BINARY -> 12 + (version <= 9 ? 0 : 8) + length * 8;
-                case NUMERIC -> 14 + (version + 7) / 17 * 2 + (length * 10 + 2) / 3;
-                case ALPHANUMERIC -> 13 + (version + 7) / 17 * 2 + (length * 11 + 1) / 2;
-                case KANJI -> 12 + (version + 7) / 17 * 2 + length * 13 / 2;
-                default -> {
-                    assert false;
-                    yield 0;
-                }
-            };
+        DataSegmentMode mode() {
+            return mode;
+        }
+
+        /**
+         * Sets the encoding mode.
+         * @param mode the mode
+         */
+        void setMode(DataSegmentMode mode) {
+            this.mode = mode;
+        }
+
+        /**
+         * The payload length.
+         * @return the number of bytes
+         */
+        int length() {
+            return length;
         }
     }
 
     // endregion
 
-    // region Merging
+    // region Mode assignment
+
+    /** The modes a block can be encoded in, in the order the costs below are indexed in. */
+    private static final DataSegmentMode[] MODES = {
+            DataSegmentMode.NUMERIC, DataSegmentMode.ALPHANUMERIC, DataSegmentMode.KANJI, DataSegmentMode.BINARY
+    };
+
+    /** The number of modes a block can be encoded in. */
+    private static final int MODE_COUNT = MODES.length;
 
     /**
-     * Merges adjacent blocks according to the specified policy, as long as merging shortens the bit stream.
-     * <p>
-     * The blocks are merged in place. The first {@code blockCount} entries of the array are the
-     * blocks, and the returned count replaces it.
-     * </p>
-     *
-     * @param blocks     the blocks
-     * @param blockCount the number of blocks
-     * @param version    the QR code version (1&ndash;40)
-     * @param policy     the blocks to absorb, and the mode to merge them into
-     * @return the number of blocks after merging
+     * The bits per byte of each mode, in sixths of a bit so that every value is a whole number:
+     * numeric 3&frac13;, alphanumeric 5&frac12;, Kanji 6&frac12; and binary 8.
      */
-    private static int mergeBlocks(Block[] blocks, int blockCount, int version, MergePolicy policy) {
-        // A merge can bring two blocks next to each other that were not before, so the passes are
-        // repeated until one of them merges nothing.
-        var previousCount = -1;
-        while (blockCount > 1 && blockCount != previousCount) {
-            previousCount = blockCount;
-            blockCount = mergePass(blocks, blockCount, version, policy);
-        }
+    private static final int[] BYTE_COSTS = { 20, 33, 39, 48 };
 
-        return blockCount;
-    }
+    /** A cost larger than any real one, standing for a mode that cannot encode a block. */
+    private static final int INFINITY = Integer.MAX_VALUE / 2;
 
     /**
-     * Runs a single merging pass over the blocks, from left to right.
+     * Assigns each block the mode of the segment encoding it, so that the bit stream is shortest.
      * <p>
-     * The surviving blocks are compacted to the front of the array. Merging never creates blocks,
-     * so the target index trails the source index and the array can be its own target.
+     * For each block and each mode able to encode it, the shortest bit stream up to and including
+     * the block is computed, either by continuing the segment of the previous block or by starting
+     * a new segment, which adds a header. That is a shortest-path problem with one node per (block,
+     * mode) pair, solved block by block. Which mode a step came from is recorded, so the assignment
+     * is read back by walking the winning path backwards from the last block.
+     * </p>
+     * <p>
+     * Costs are counted in sixths of a bit, since three of the four modes encode a byte in a
+     * fractional number of bits. A segment's real length is the sum of its byte costs rounded up to
+     * whole bits, so rounding up wherever a segment ends makes the cost exact.
      * </p>
      *
-     * @param blocks     the blocks
-     * @param blockCount the number of blocks
-     * @param version    the QR code version (1&ndash;40)
-     * @param policy     the blocks to absorb, and the mode to merge them into
-     * @return the number of blocks after the pass
+     * @param blocks  the blocks, each with the mode encoding it most compactly
+     * @param version the QR code version (1&ndash;40)
      */
-    private static int mergePass(Block[] blocks, int blockCount, int version, MergePolicy policy) {
-        var processedBlocks = 1;
-        var sourceIndex = 1;
-        while (sourceIndex < blockCount) {
-            // blocks[processedBlocks - 1] is the last block of the pass so far, and the one absorbing further blocks
-            var absorbed = tryMerge(blocks, processedBlocks - 1, sourceIndex, blockCount, version, policy);
-            if (absorbed > 0) {
-                sourceIndex += absorbed;
-            } else {
-                blocks[processedBlocks] = blocks[sourceIndex];
-                processedBlocks += 1;
-                sourceIndex += 1;
+    private static void assignModes(Block[] blocks, int version) {
+        // A block of length 0 costs exactly the segment header (mode and character count indicator).
+        var headerCosts = new int[MODE_COUNT];
+        for (var m = 0; m < MODE_COUNT; m += 1)
+            headerCosts[m] = 6 * segmentHeaderLength(MODES[m], version);
+
+        var blockCount = blocks.length;
+        var previousCosts = new int[MODE_COUNT]; // the shortest bit stream up to the previous block, per mode
+        var costs = new int[MODE_COUNT]; // the shortest bit stream up to the current block, per mode
+        var previousModes = new byte[blockCount * MODE_COUNT]; // the mode of the previous block on that path
+
+        for (var i = 0; i < blockCount; i += 1) {
+            var swap = previousCosts;
+            previousCosts = costs;
+            costs = swap;
+
+            var block = blocks[i];
+            for (var m = 0; m < MODE_COUNT; m += 1) {
+                if (!canEncode(MODES[m], block.mode())) {
+                    costs[m] = INFINITY;
+                    continue;
+                }
+
+                var dataCost = block.length() * BYTE_COSTS[m];
+                if (i == 0) {
+                    costs[m] = headerCosts[m] + dataCost;
+                    continue;
+                }
+
+                // Continue the segment of the previous block, which costs no header. It is tried
+                // first and only beaten strictly, so it also wins a tie.
+                var best = previousCosts[m] + dataCost;
+                var bestPrevious = m;
+
+                // Or end a segment of another mode and start a new one.
+                for (var p = 0; p < MODE_COUNT; p += 1) {
+                    var previousCost = previousCosts[p];
+                    if (p == m || previousCost >= INFINITY)
+                        continue;
+
+                    var cost = roundUpToBits(previousCost) + headerCosts[m] + dataCost;
+                    if (cost < best) {
+                        best = cost;
+                        bestPrevious = p;
+                    }
+                }
+
+                costs[m] = best;
+                previousModes[i * MODE_COUNT + m] = (byte) bestPrevious;
             }
         }
 
-        return processedBlocks;
-    }
-
-    /**
-     * Tries to merge the block at {@code targetIndex} with the blocks starting at {@code sourceIndex}.
-     * <p>
-     * Three blocks are tried first, as a block the policy absorbs is often surrounded by two blocks
-     * merging with neither of them alone pays off. If three blocks may be merged but merging them is
-     * not shorter, two are not tried: the middle block would remain either way.
-     * </p>
-     *
-     * @param blocks      the blocks
-     * @param targetIndex the index of the absorbing block
-     * @param sourceIndex the index of the first block to absorb
-     * @param blockCount  the number of blocks
-     * @param version     the QR code version (1&ndash;40)
-     * @param policy      the blocks to absorb, and the mode to merge them into
-     * @return the number of absorbed blocks (0, 1 or 2)
-     */
-    private static int tryMerge(Block[] blocks, int targetIndex, int sourceIndex, int blockCount, int version,
-                                MergePolicy policy) {
-        var mode0 = blocks[targetIndex].mode();
-        var mode1 = blocks[sourceIndex].mode();
-
-        if (sourceIndex + 1 < blockCount && policy.canMerge3(mode0, mode1, blocks[sourceIndex + 1].mode()))
-            return mergeIfShorter(blocks, targetIndex, sourceIndex, 2, version, policy.mergedMode) ? 2 : 0;
-
-        if (policy.canMerge2(mode0, mode1))
-            return mergeIfShorter(blocks, targetIndex, sourceIndex, 1, version, policy.mergedMode) ? 1 : 0;
-
-        return 0;
-    }
-
-    /**
-     * Replaces the block at {@code targetIndex} with the merge of it and the {@code count} blocks
-     * starting at {@code sourceIndex}, unless the merged segment is longer than the separate ones.
-     *
-     * @param blocks      the blocks
-     * @param targetIndex the index of the absorbing block
-     * @param sourceIndex the index of the first block to absorb
-     * @param count       the number of blocks to absorb
-     * @param version     the QR code version (1&ndash;40)
-     * @param mergedMode  the mode of the merged block
-     * @return {@code true} if the blocks have been merged
-     */
-    private static boolean mergeIfShorter(Block[] blocks, int targetIndex, int sourceIndex, int count, int version,
-                                          DataSegmentMode mergedMode) {
-        var target = blocks[targetIndex];
-        var payloadLength = target.length();
-        var separateLength = target.segmentLength(version);
-        for (var i = 0; i < count; i += 1) {
-            var block = blocks[sourceIndex + i];
-            payloadLength += block.length();
-            separateLength += block.segmentLength(version);
+        // The cheapest mode for the last block ends the winning path; walk it back to the first block.
+        var mode = 0;
+        for (var m = 1; m < MODE_COUNT; m += 1) {
+            if (roundUpToBits(costs[m]) < roundUpToBits(costs[mode]))
+                mode = m;
         }
 
-        var mergedBlock = new Block(mergedMode, payloadLength);
-        if (mergedBlock.segmentLength(version) > separateLength)
-            return false;
-
-        blocks[targetIndex] = mergedBlock;
-        return true;
+        for (var i = blockCount - 1; i >= 0; i -= 1) {
+            blocks[i].setMode(MODES[mode]);
+            mode = previousModes[i * MODE_COUNT + mode];
+        }
     }
 
     /**
-     * The blocks a merging pass absorbs, and the mode it merges them into.
-     * <p>
-     * A merge is only ever considered where the merged mode can encode all of the blocks involved.
-     * Whether it is shorter is decided separately, for the blocks at hand.
-     * </p>
+     * Rounds a cost in sixths of a bit up to whole bits, still counted in sixths.
+     *
+     * @param cost the cost, in sixths of a bit
+     * @return the rounded cost, in sixths of a bit
      */
-    private enum MergePolicy {
+    private static int roundUpToBits(int cost) {
+        return (cost + 5) / 6 * 6;
+    }
 
-        /** Absorbs numeric blocks into the alphanumeric blocks next to them. */
-        NUMERIC_INTO_ALPHANUMERIC(DataSegmentMode.ALPHANUMERIC) {
-            @Override
-            boolean canMerge2(DataSegmentMode mode0, DataSegmentMode mode1) {
-                return (mode0 == DataSegmentMode.ALPHANUMERIC && mode1 == DataSegmentMode.NUMERIC)
-                        || (mode0 == DataSegmentMode.NUMERIC && mode1 == DataSegmentMode.ALPHANUMERIC);
-            }
+    /**
+     * Indicates whether a segment of the specified mode can encode a block of the specified mode.
+     * <p>
+     * Binary mode encodes every block. Alphanumeric mode additionally encodes a numeric block, as
+     * the digits are part of its character set. Kanji mode, whose unit is a pair of bytes, encodes
+     * nothing but a Kanji block, which keeps every Kanji segment an even number of bytes long.
+     * </p>
+     *
+     * @param segmentMode the mode of the segment
+     * @param blockMode   the mode encoding the block most compactly
+     * @return {@code true} if the segment can encode the block
+     */
+    private static boolean canEncode(DataSegmentMode segmentMode, DataSegmentMode blockMode) {
+        return segmentMode == DataSegmentMode.BINARY
+                || segmentMode == blockMode
+                || (segmentMode == DataSegmentMode.ALPHANUMERIC && blockMode == DataSegmentMode.NUMERIC);
+    }
 
-            @Override
-            boolean canMerge3(DataSegmentMode mode0, DataSegmentMode mode1, DataSegmentMode mode2) {
-                return mode0 == DataSegmentMode.ALPHANUMERIC && mode1 == DataSegmentMode.NUMERIC && mode2 == mode0;
-            }
-        },
-
-        /**
-         * Absorbs blocks into the binary blocks next to them, and a non-binary block between two
-         * blocks of equal mode into those two. Binary mode encodes every block, so the second case
-         * needs no restriction beyond the blocks around the absorbed one being alike.
-         */
-        ANY_INTO_BINARY(DataSegmentMode.BINARY) {
-            @Override
-            boolean canMerge2(DataSegmentMode mode0, DataSegmentMode mode1) {
-                return (mode0 == DataSegmentMode.BINARY) != (mode1 == DataSegmentMode.BINARY);
-            }
-
-            @Override
-            boolean canMerge3(DataSegmentMode mode0, DataSegmentMode mode1, DataSegmentMode mode2) {
-                return mode1 != DataSegmentMode.BINARY && mode2 == mode0;
+    /**
+     * Returns the length of a segment header with the specified parameters.
+     *
+     * @param mode   the encoding mode
+     * @param version the QR code version (1&ndash;40)
+     * @return the length, including the header, in bits
+     */
+    private static int segmentHeaderLength(DataSegmentMode mode, int version) {
+        // Duplicated code for performance
+        return switch (mode) {
+            case BINARY -> 12 + (version <= 9 ? 0 : 8);
+            case NUMERIC -> 14 + (version + 7) / 17 * 2;
+            case ALPHANUMERIC -> 13 + (version + 7) / 17 * 2;
+            case KANJI -> 12 + (version + 7) / 17 * 2;
+            default -> {
+                assert false;
+                yield 0;
             }
         };
-
-        /** The mode of a block merged by this policy. */
-        final DataSegmentMode mergedMode;
-
-        /**
-         * Creates a new instance.
-         *
-         * @param mergedMode the mode of a merged block
-         */
-        MergePolicy(DataSegmentMode mergedMode) {
-            this.mergedMode = mergedMode;
-        }
-
-        /**
-         * Indicates if two consecutive blocks with the specified modes may be merged.
-         *
-         * @param mode0 the mode of the first block
-         * @param mode1 the mode of the second block
-         * @return {@code true} if they may be merged
-         */
-        abstract boolean canMerge2(DataSegmentMode mode0, DataSegmentMode mode1);
-
-        /**
-         * Indicates if three consecutive blocks with the specified modes may be merged.
-         *
-         * @param mode0 the mode of the first block
-         * @param mode1 the mode of the second block
-         * @param mode2 the mode of the third block
-         * @return {@code true} if they may be merged
-         */
-        abstract boolean canMerge3(DataSegmentMode mode0, DataSegmentMode mode1, DataSegmentMode mode2);
     }
 
     // endregion
