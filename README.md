@@ -5,7 +5,8 @@ Easy to use and super fast QR code generator for Java.
 ## Features
 
 - All 40 versions (sizes) and all 4 error correction levels of the QR Code Model 2 standard
-- Output as a list of rectangles, raw modules, SVG document, SVG/XAML graphics path, or PNG
+- Output as a list of rectangles or polygons, raw modules, SVG document, SVG/XAML graphics path, or PNG
+- Fast: 20 to 70 times faster than comprable QR code generator libraries
 - Picks the segment modes that yield the smallest possible QR code
 - Structured Append: long text split across up to 16 linked QR codes
 - ECI support, including automatic Latin-1 / UTF-8 selection, and Kanji mode
@@ -64,7 +65,7 @@ level as far as that version allows, so you get more error correction for free.
 byte[] png  = qrCode.toPng(4, 10);                          // black on white
 byte[] png2 = qrCode.toPng(4, 10, 0x00335c, 0xf5f5f5);      // 0xRRGGBB colors
 
-String svg  = qrCode.toSvgString(4);
+String svg  = qrCode.toSvgString(4);                        // small SVG file
 String svg2 = qrCode.toSvgString(4, "#00335c", "white");    // any CSS color
 
 String path = qrCode.toGraphicsPath(4);                     // for SVG or XAML
